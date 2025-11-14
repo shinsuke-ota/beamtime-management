@@ -1,8 +1,15 @@
 from logging.config import fileConfig
+from pathlib import Path
+import sys
 
 from sqlalchemy import engine_from_config, pool
 
 from alembic import context
+
+# Ensure the project root (which contains the ``app`` package) is on ``sys.path``
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT))
 
 from app.database import Base
 from app import models

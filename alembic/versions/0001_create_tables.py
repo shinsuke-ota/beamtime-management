@@ -8,7 +8,9 @@ Create Date: 2024-03-17
 from alembic import op
 import sqlalchemy as sa
 
-import app.models as models
+USER_ROLES = ("PI", "PROJECT_MANAGER", "ALLOCATOR", "APPROVER")
+REQUEST_STATUSES = ("PENDING", "REVIEWED", "APPROVED", "REJECTED")
+ALLOCATION_STATUSES = ("SCHEDULED", "CONFIRMED", "COMPLETED")
 
 # revision identifiers, used by Alembic.
 revision = "0001"
@@ -24,7 +26,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(), nullable=False),
         sa.Column("email", sa.String(), nullable=False),
         sa.Column("affiliation", sa.String(), nullable=True),
-        sa.Column("role", sa.Enum(models.UserRole), nullable=False),
+        sa.Column("role", sa.Enum(*USER_ROLES, name="userrole"), nullable=False),
     )
     op.create_table(
         "research_projects",
@@ -41,7 +43,7 @@ def upgrade() -> None:
         sa.Column("requested_date", sa.Date(), nullable=False),
         sa.Column("duration_hours", sa.Integer(), nullable=False),
         sa.Column("justification", sa.Text(), nullable=True),
-        sa.Column("status", sa.Enum(models.RequestStatus), nullable=False),
+        sa.Column("status", sa.Enum(*REQUEST_STATUSES, name="requeststatus"), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
     )
     op.create_table(
@@ -52,7 +54,7 @@ def upgrade() -> None:
         sa.Column("slot_date", sa.Date(), nullable=False),
         sa.Column("slot_time", sa.String(), nullable=False),
         sa.Column("duration_hours", sa.Integer(), nullable=False),
-        sa.Column("status", sa.Enum(models.AllocationStatus), nullable=False),
+        sa.Column("status", sa.Enum(*ALLOCATION_STATUSES, name="allocationstatus"), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
     )
     op.create_table(

@@ -22,19 +22,26 @@ if sys.version_info >= (3, 13):
     signature = inspect.signature(_original_forwardref_evaluate)
     if "recursive_guard" in signature.parameters:
 
-        def _evaluate_with_recursive_guard(self, globalns, localns, recursive_guard=None):
-            if recursive_guard is None:
-                recursive_guard = set()
+        def _evaluate_with_recursive_guard(self, *args, **kwargs):
+            """Allow positional and keyword recursive_guard arguments."""
+
             try:
-                return _original_forwardref_evaluate(self, globalns, localns, recursive_guard)
+                return _original_forwardref_evaluate(self, *args, **kwargs)
             except TypeError as exc:
-                if "recursive_guard" not in str(exc):
+                if "recursive_guard" not in str(exc) or "recursive_guard" in kwargs:
                     raise
+                if len(args) < 3:
+                    raise
+
+                *prefix_args, recursive_guard = args
+                if recursive_guard is None:
+                    recursive_guard = set()
+
                 return _original_forwardref_evaluate(
                     self,
-                    globalns,
-                    localns,
+                    *prefix_args,
                     recursive_guard=recursive_guard,
+                    **kwargs,
                 )
 
         ForwardRef._evaluate = _evaluate_with_recursive_guard

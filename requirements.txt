@@ -2,6 +2,10 @@ fastapi==0.110.0
 uvicorn==0.27.1
 sqlalchemy>=2.0.35
 alembic==1.13.1
-pydantic==1.10.14
+# Pydantic 1.10.14 is incompatible with Python 3.13 due to the missing
+# ``recursive_guard`` argument when evaluating ForwardRefs. Upgrading to at least
+# 1.10.15 fixes the issue. Pin the latest patch release in the 1.x series to
+# ensure FastAPI remains compatible.
+pydantic==1.10.17
 pytest==8.0.2
 httpx==0.27.0

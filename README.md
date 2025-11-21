@@ -17,7 +17,8 @@ and status dashboards.
   updating `SQLALCHEMY_DATABASE_URL`.
 - **Frontend** – Vite-powered Vue 3 SPA (`frontend/`) styled with Vuetify and
   communicating with the API through `frontend/src/services/api.js`. The
-  base URL is configured via `VITE_API_URL`.
+  base URL is configured via `VITE_API_URL` (defaults to
+  `http://localhost:8000`).
 - **Data & migrations** – SQLAlchemy ORM models live in `app/models.py` and
   are versioned through Alembic (see `alembic/`).
 
@@ -52,8 +53,8 @@ cd frontend
 npm install
 ```
 
-Create `frontend/.env` to point the SPA at your API if it differs from
-`http://localhost:8000`:
+Create `frontend/.env` to point the SPA at your API if it differs from the
+default `http://localhost:8000`:
 
 ```
 VITE_API_URL=http://localhost:8000

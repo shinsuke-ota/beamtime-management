@@ -7,5 +7,6 @@ alembic==1.13.1
 # 1.10.15 fixes the issue. Pin the latest patch release in the 1.x series to
 # ensure FastAPI remains compatible.
 pydantic==1.10.17
+email-validator==2.2.0
 pytest==8.0.2
 httpx==0.27.0

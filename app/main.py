@@ -23,6 +23,19 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     return db_user
 
 
+@app.get("/users/", response_model=List[schemas.User])
+def list_users(db: Session = Depends(get_db)):
+    return db.query(models.User).order_by(models.User.name.asc()).all()
+
+
+@app.get("/users/{user_id}", response_model=schemas.User)
+def get_user(user_id: int, db: Session = Depends(get_db)):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return db_user
+
+
 @app.put("/users/{user_id}", response_model=schemas.User)
 def update_user(user_id: int, payload: schemas.UserUpdate, db: Session = Depends(get_db)):
     db_user = db.query(models.User).filter(models.User.id == user_id).first()

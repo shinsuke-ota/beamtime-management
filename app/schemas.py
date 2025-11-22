@@ -123,9 +123,14 @@ class ApproverSetupRequest(BaseModel):
     affiliation_id: Optional[int] = None
 
 
-class ApproverSetupResponse(BaseModel):
+class ApplicationManagerSetupResponse(BaseModel):
     user: User
     token: Token
+
+
+class SetupStatusResponse(BaseModel):
+    requires_setup: bool
+    message: str
 
 
 class LoginRequest(BaseModel):

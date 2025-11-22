@@ -79,16 +79,45 @@ app.add_middleware(
 )
 
 
+def application_manager_exists(db: Session) -> bool:
+    return (
+        db.query(models.User)
+        .filter(models.User.role == models.UserRole.APPLICATION_MANAGER)
+        .count()
+        > 0
+    )
+
+
+@app.get("/auth/setup-status", response_model=schemas.SetupStatusResponse)
+def setup_status(db: Session = Depends(get_db)):
+    exists = application_manager_exists(db)
+    if exists:
+        return schemas.SetupStatusResponse(
+            requires_setup=False,
+            message="Application Manager already registered",
+        )
+
+    total_users = db.query(models.User).count()
+    message = (
+        "No users registered. Create the first Application Manager to continue."
+        if total_users == 0
+        else "No Application Manager exists. Register one to unlock administration."
+    )
+    return schemas.SetupStatusResponse(requires_setup=True, message=message)
+
+
 @app.post(
-    "/auth/approver-setup",
-    response_model=schemas.ApproverSetupResponse,
+    "/auth/application-manager-setup",
+    response_model=schemas.ApplicationManagerSetupResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def approver_setup(payload: schemas.ApproverSetupRequest, db: Session = Depends(get_db)):
-    if db.query(models.User).count() > 0:
+def application_manager_setup(
+    payload: schemas.ApplicationManagerSetupRequest, db: Session = Depends(get_db)
+):
+    if application_manager_exists(db):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="An approver is already registered",
+            detail="An Application Manager is already registered",
         )
     try:
         validate_email(payload.email)
@@ -105,9 +134,9 @@ def approver_setup(payload: schemas.ApproverSetupRequest, db: Session = Depends(
             name=payload.name
             or build_full_name(payload.first_name, payload.last_name, payload.middle_name),
             email=payload.email,
-            affiliation_id=payload.affiliation_id,
-            role_id=approver_role.id,
-            password_hash=get_password_hash(payload.email),
+            affiliation=payload.affiliation,
+            role=models.UserRole.APPLICATION_MANAGER,
+            password_hash=get_password_hash(payload.password),
         )
         db.add(db_user)
         db.commit()
@@ -123,7 +152,7 @@ def approver_setup(payload: schemas.ApproverSetupRequest, db: Session = Depends(
         data={"sub": str(db_user.id), "role": db_user.role.slug.value},
         expires_delta=timedelta(minutes=60),
     )
-    return schemas.ApproverSetupResponse(
+    return schemas.ApplicationManagerSetupResponse(
         user=redact_user_payload(db_user, db_user),
         token=schemas.Token(access_token=access_token),
     )
@@ -131,11 +160,10 @@ def approver_setup(payload: schemas.ApproverSetupRequest, db: Session = Depends(
 
 @app.post("/auth/signup", response_model=schemas.User, status_code=status.HTTP_201_CREATED)
 def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    total_users = db.query(models.User).count()
-    if total_users == 0:
+    if not application_manager_exists(db):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Use approver setup to register the first user",
+            detail="Register an Application Manager before self-service signup",
         )
     role = get_role_by_id(db, user.role_id)
     if total_users > 0 and role.slug != models.UserRole.PI:
@@ -173,6 +201,11 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
 @app.post("/auth/login", response_model=schemas.Token)
 def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
+    if not application_manager_exists(db):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Application requires initial Application Manager setup",
+        )
     db_user = db.query(models.User).filter(models.User.email == payload.email).first()
     if not db_user or not verify_password(payload.password, db_user.password_hash):
         raise HTTPException(
@@ -193,7 +226,11 @@ def create_user(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    ensure_level(current_user, AccessLevel.APPROVER, "Only approvers can create new users")
+    ensure_level(
+        current_user,
+        AccessLevel.APPLICATION_MANAGER,
+        "Only Application Managers can create new users",
+    )
     try:
         validate_email(user.email)
     except EmailNotValidError as exc:

@@ -62,7 +62,12 @@ def upgrade() -> None:
         )
 
     if added_column:
-        op.alter_column("users", "password_hash", server_default=None)
+        # SQLite does not support dropping a column default via ALTER TABLE,
+        # so we only clear the default on databases that allow it. The column
+        # remains NOT NULL and application code always supplies a hash, so the
+        # empty-string default is only used while backfilling existing rows.
+        if connection.dialect.name != "sqlite":
+            op.alter_column("users", "password_hash", server_default=None)
 
 
 def downgrade() -> None:

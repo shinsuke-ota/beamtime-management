@@ -72,6 +72,11 @@ db_url="sqlite:///./beamtime.db"  # or export DATABASE_URL
 alembic upgrade head
 ```
 
+SQLite users: the password-hash migration is now SQLite-safe and should
+complete on the first run. If you previously hit an error while dropping the
+column default, simply rerun `alembic upgrade head`—the migration will no longer
+fail, and the column will be created only if it does not yet exist.
+
 During CI/CD or deployment, always run `alembic upgrade head` before starting
 application processes.
 

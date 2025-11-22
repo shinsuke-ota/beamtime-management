@@ -14,7 +14,7 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    pass
+    password: str
 
 
 class UserUpdate(BaseModel):
@@ -22,6 +22,7 @@ class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     affiliation: Optional[str] = None
     role: Optional[UserRole] = None
+    password: Optional[str] = None
 
 
 class User(UserBase):
@@ -29,6 +30,16 @@ class User(UserBase):
 
     class Config:
         orm_mode = True
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
 
 
 class ProjectBase(BaseModel):

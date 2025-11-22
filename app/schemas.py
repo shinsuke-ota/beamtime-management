@@ -8,12 +8,15 @@ from .models import AllocationStatus, RequestStatus, UserRole
 
 
 class UserBase(BaseModel):
-    name: str = Field(..., json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER})
+    name: str = Field(
+        ..., json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
+    )
     email: EmailStr = Field(
         ..., json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
     affiliation: Optional[str] = Field(
-        None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
+        None,
+        json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER},
     )
     role: UserRole = Field(
         ..., json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
@@ -66,6 +69,17 @@ class User(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class ApproverSetupRequest(BaseModel):
+    name: str
+    email: EmailStr
+    affiliation: Optional[str] = None
+
+
+class ApproverSetupResponse(BaseModel):
+    user: User
+    token: Token
 
 
 class LoginRequest(BaseModel):

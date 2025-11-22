@@ -41,38 +41,48 @@ app.dependency_overrides[get_db] = override_get_db
 client = TestClient(app)
 
 
-def create_user(payload):
-    response = client.post("/users/", json=payload)
+def register_initial_approver():
+    response = client.post(
+        "/auth/approver-setup",
+        json={"name": "Initial Approver", "email": "approver@beamtime.org", "affiliation": "Lab"},
+    )
+    assert response.status_code == 201
+    data = response.json()
+    return data["user"]["id"], data["token"]["access_token"]
+
+
+def auth_headers(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}"}
+
+
+def create_user(payload, token):
+    full_payload = payload | {"password": payload.get("password", "testpass")}
+    response = client.post("/users/", json=full_payload, headers=auth_headers(token))
     assert response.status_code == 200
     return response.json()["id"]
 
 
 def test_full_workflow():
     reset_database()
+    approver_id, approver_token = register_initial_approver()
     pi_id = create_user({
         "name": "Dr. PI",
         "email": "pi@example.com",
         "affiliation": "Lab",
         "role": "PI",
-    })
+    }, approver_token)
     manager_id = create_user({
         "name": "Manager",
         "email": "manager@example.com",
         "affiliation": "Lab",
         "role": "PROJECT_MANAGER",
-    })
+    }, approver_token)
     allocator_id = create_user({
         "name": "Allocator",
         "email": "allocator@example.com",
         "affiliation": "Lab",
         "role": "ALLOCATOR",
-    })
-    approver_id = create_user({
-        "name": "Approver",
-        "email": "approver@example.com",
-        "affiliation": "Lab",
-        "role": "APPROVER",
-    })
+    }, approver_token)
 
     project_payload = {
         "title": "Project A",
@@ -80,7 +90,7 @@ def test_full_workflow():
         "pi_id": pi_id,
         "manager_id": manager_id,
     }
-    project_resp = client.post("/projects/", json=project_payload)
+    project_resp = client.post("/projects/", json=project_payload, headers=auth_headers(approver_token))
     assert project_resp.status_code == 200
     project_id = project_resp.json()["id"]
 
@@ -93,6 +103,7 @@ def test_full_workflow():
         f"/projects/{project_id}/requests",
         params={"pi_id": pi_id},
         json=request_payload,
+        headers=auth_headers(approver_token),
     )
     assert request_resp.status_code == 200
     request_id = request_resp.json()["id"]
@@ -101,6 +112,7 @@ def test_full_workflow():
         f"/requests/{request_id}/status",
         params={"manager_id": manager_id},
         json={"status": "APPROVED"},
+        headers=auth_headers(approver_token),
     )
     assert status_resp.status_code == 200
     assert status_resp.json()["status"] == "APPROVED"
@@ -115,6 +127,7 @@ def test_full_workflow():
         f"/requests/{request_id}/allocations",
         params={"allocator_id": allocator_id},
         json=allocation_payload,
+        headers=auth_headers(approver_token),
     )
     assert allocation_resp.status_code == 200
     allocation_id = allocation_resp.json()["id"]
@@ -122,66 +135,76 @@ def test_full_workflow():
     approval_resp = client.post(
         f"/allocations/{allocation_id}/approve",
         json={"approver_id": approver_id, "approved": True},
+        headers=auth_headers(approver_token),
     )
     assert approval_resp.status_code == 200
     assert approval_resp.json()["approved"] is True
 
-    projects_resp = client.get(f"/users/{pi_id}/projects")
+    projects_resp = client.get(f"/users/{pi_id}/projects", headers=auth_headers(approver_token))
     assert projects_resp.status_code == 200
     assert len(projects_resp.json()) == 1
 
-    monthly_resp = client.get("/reports/monthly", params={"year": date.today().year})
+    monthly_resp = client.get(
+        "/reports/monthly", params={"year": date.today().year}, headers=auth_headers(approver_token)
+    )
     assert monthly_resp.status_code == 200
     assert len(monthly_resp.json()) >= 1
 
-    table_resp = client.get("/allocations/table")
+    table_resp = client.get("/allocations/table", headers=auth_headers(approver_token))
     assert table_resp.status_code == 200
     assert table_resp.json()[0]["project_title"] == "Project A"
 
 
 def test_list_users_returns_ordered_users():
     reset_database()
+    initial_id, approver_token = register_initial_approver()
     users = [
         {
             "name": "Charlie",
             "email": "charlie@example.com",
             "affiliation": "Lab",
             "role": "PI",
+            "password": "testpass",
         },
         {
             "name": "Alice",
             "email": "alice@example.com",
             "affiliation": "Lab",
             "role": "APPROVER",
+            "password": "testpass",
         },
         {
             "name": "Bob",
             "email": "bob@example.com",
             "affiliation": "Lab",
             "role": "ALLOCATOR",
+            "password": "testpass",
         },
     ]
-    created_ids = [create_user(payload) for payload in users]
+    created_ids = [create_user(payload, approver_token) for payload in users]
 
-    response = client.get("/users/")
+    response = client.get("/users/", headers=auth_headers(approver_token))
     assert response.status_code == 200
     result = response.json()
-    assert [user["name"] for user in result] == ["Alice", "Bob", "Charlie"]
-    assert sorted(created_ids) == sorted([user["id"] for user in result])
+    assert [user["name"] for user in result] == ["Alice", "Bob", "Charlie", "Initial Approver"]
+    assert sorted(created_ids + [initial_id]) == sorted([user["id"] for user in result])
 
 
 def test_get_user_by_id():
     reset_database()
+    _, approver_token = register_initial_approver()
     user_id = create_user(
         {
             "name": "Eve",
             "email": "eve@example.com",
             "affiliation": "Lab",
             "role": "PROJECT_MANAGER",
-        }
+            "password": "testpass",
+        },
+        approver_token,
     )
 
-    response = client.get(f"/users/{user_id}")
+    response = client.get(f"/users/{user_id}", headers=auth_headers(approver_token))
     assert response.status_code == 200
     assert response.json() == {
         "id": user_id,

@@ -1,10 +1,12 @@
+import base64
+import hashlib
+import hmac
+import json
 import os
 from datetime import datetime, timedelta
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
-from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from .authorization import AccessLevel, ensure_subject_meets_level
@@ -15,8 +17,16 @@ SECRET_KEY = os.getenv("SECRET_KEY", "change_this_secret")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+
+
+def _b64encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode().rstrip("=")
+
+
+def _b64decode(data: str) -> bytes:
+    padding = "=" * (-len(data) % 4)
+    return base64.urlsafe_b64decode(data + padding)
 
 
 def get_db():
@@ -28,18 +38,45 @@ def get_db():
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    return hmac.compare_digest(get_password_hash(plain_password), hashed_password)
 
 
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    return hmac.new(SECRET_KEY.encode(), msg=password.encode(), digestmod=hashlib.sha256).hexdigest()
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    to_encode.update({"exp": expire.isoformat()})
+    message = json.dumps(to_encode, separators=(",", ":"), sort_keys=True).encode()
+    message_b64 = _b64encode(message)
+    signature = hmac.new(SECRET_KEY.encode(), msg=message_b64.encode(), digestmod=hashlib.sha256)
+    token = f"{message_b64}.{_b64encode(signature.digest())}"
+    return token
+
+
+def _decode_access_token(token: str) -> dict:
+    try:
+        message_b64, signature_b64 = token.split(".", maxsplit=1)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
+    expected_signature = hmac.new(
+        SECRET_KEY.encode(), msg=message_b64.encode(), digestmod=hashlib.sha256
+    )
+    if not hmac.compare_digest(_b64encode(expected_signature.digest()), signature_b64):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
+    try:
+        payload = json.loads(_b64decode(message_b64))
+        exp_raw = payload.get("exp")
+        if not exp_raw:
+            raise ValueError
+        expires_at = datetime.fromisoformat(exp_raw)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
+    if datetime.utcnow() > expires_at:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has expired")
+    return payload
 
 
 def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)) -> User:
@@ -49,12 +86,12 @@ def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = _decode_access_token(token)
         user_id = payload.get("sub")
         if user_id is None:
             raise credentials_exception
         user_id = int(user_id)
-    except JWTError:
+    except HTTPException:
         raise credentials_exception
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:

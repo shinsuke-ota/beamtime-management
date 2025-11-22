@@ -40,6 +40,15 @@ class AllocationStatus(str, enum.Enum):
 class User(Base):
     __tablename__ = "users"
 
+    access_metadata = {
+        "id": {"read_level": 3, "write_level": 3},
+        "name": {"read_level": 3, "write_level": 3},
+        "email": {"read_level": 3, "write_level": 3},
+        "affiliation": {"read_level": 3, "write_level": 3},
+        "role": {"read_level": 3, "write_level": 3},
+        "password_hash": {"read_level": 1, "write_level": 1},
+    }
+
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     email = Column(String, unique=True, nullable=False, index=True)
@@ -57,6 +66,14 @@ class User(Base):
 class ResearchProject(Base):
     __tablename__ = "research_projects"
 
+    access_metadata = {
+        "id": {"read_level": 2, "write_level": 3},
+        "title": {"read_level": 2, "write_level": 3},
+        "description": {"read_level": 2, "write_level": 3},
+        "pi_id": {"read_level": 2, "write_level": 3},
+        "manager_id": {"read_level": 2, "write_level": 3},
+    }
+
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, nullable=False)
     description = Column(Text, nullable=True)
@@ -70,6 +87,16 @@ class ResearchProject(Base):
 
 class BeamtimeRequest(Base):
     __tablename__ = "beamtime_requests"
+
+    access_metadata = {
+        "id": {"read_level": 2, "write_level": 3},
+        "project_id": {"read_level": 2, "write_level": 3},
+        "requested_date": {"read_level": 2, "write_level": 3},
+        "duration_hours": {"read_level": 2, "write_level": 3},
+        "justification": {"read_level": 2, "write_level": 3},
+        "status": {"read_level": 2, "write_level": 3},
+        "created_at": {"read_level": 2, "write_level": 3},
+    }
 
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("research_projects.id"), nullable=False)
@@ -86,6 +113,17 @@ class BeamtimeRequest(Base):
 class Allocation(Base):
     __tablename__ = "allocations"
 
+    access_metadata = {
+        "id": {"read_level": 3, "write_level": 4},
+        "request_id": {"read_level": 3, "write_level": 4},
+        "beamline": {"read_level": 3, "write_level": 4},
+        "slot_date": {"read_level": 3, "write_level": 4},
+        "slot_time": {"read_level": 3, "write_level": 4},
+        "duration_hours": {"read_level": 3, "write_level": 4},
+        "status": {"read_level": 3, "write_level": 4},
+        "created_at": {"read_level": 3, "write_level": 4},
+    }
+
     id = Column(Integer, primary_key=True, index=True)
     request_id = Column(Integer, ForeignKey("beamtime_requests.id"), nullable=False)
     beamline = Column(String, nullable=False)
@@ -101,6 +139,15 @@ class Allocation(Base):
 
 class Approval(Base):
     __tablename__ = "approvals"
+
+    access_metadata = {
+        "id": {"read_level": 4, "write_level": 5},
+        "allocation_id": {"read_level": 4, "write_level": 5},
+        "approver_id": {"read_level": 4, "write_level": 5},
+        "approved": {"read_level": 4, "write_level": 5},
+        "notes": {"read_level": 4, "write_level": 5},
+        "created_at": {"read_level": 4, "write_level": 5},
+    }
 
     id = Column(Integer, primary_key=True, index=True)
     allocation_id = Column(Integer, ForeignKey("allocations.id"), nullable=False)

@@ -47,6 +47,17 @@ app.add_middleware(
 
 @app.post("/auth/signup", response_model=schemas.User, status_code=status.HTTP_201_CREATED)
 def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    total_users = db.query(models.User).count()
+    if total_users == 0 and user.role != models.UserRole.APPROVER:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The first registered user must be an approver",
+        )
+    if total_users > 0 and user.role != models.UserRole.PI:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Self-service signup is allowed only for PIs",
+        )
     try:
         db_user = models.User(
             name=user.name,
@@ -89,6 +100,11 @@ def create_user(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
+    if current_user.role != models.UserRole.APPROVER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only approvers can create new users",
+        )
     db_user = models.User(
         name=user.name,
         email=user.email,

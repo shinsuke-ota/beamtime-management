@@ -18,6 +18,7 @@ from .database import Base
 
 
 class UserRole(str, enum.Enum):
+    APPLICATION_MANAGER = "APPLICATION_MANAGER"
     PI = "PI"
     PROJECT_MANAGER = "PROJECT_MANAGER"
     ALLOCATOR = "ALLOCATOR"

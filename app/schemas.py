@@ -71,15 +71,21 @@ class Token(BaseModel):
     token_type: str = "bearer"
 
 
-class ApproverSetupRequest(BaseModel):
+class ApplicationManagerSetupRequest(BaseModel):
     name: str
     email: EmailStr
     affiliation: Optional[str] = None
+    password: str
 
 
-class ApproverSetupResponse(BaseModel):
+class ApplicationManagerSetupResponse(BaseModel):
     user: User
     token: Token
+
+
+class SetupStatusResponse(BaseModel):
+    requires_setup: bool
+    message: str
 
 
 class LoginRequest(BaseModel):

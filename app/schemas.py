@@ -4,7 +4,7 @@ from typing import List, Optional
 from pydantic import BaseModel, EmailStr, Field, root_validator
 
 from .authorization import AccessLevel
-from .models import AllocationStatus, RequestStatus
+from .models import AllocationStatus, RequestStatus, UserRole
 
 
 class InstitutionBase(BaseModel):
@@ -66,7 +66,7 @@ class UserBase(BaseModel):
     email: EmailStr = Field(
         ..., json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
-    affiliation_id: Optional[int] = Field(
+    affiliation: Optional[str] = Field(
         None,
         json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER},
     )
@@ -105,7 +105,7 @@ class UserUpdate(BaseModel):
     email: Optional[EmailStr] = Field(
         None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
-    affiliation_id: Optional[int] = Field(
+    affiliation: Optional[str] = Field(
         None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
     department_id: Optional[int] = Field(
@@ -142,7 +142,7 @@ class User(BaseModel):
     email: Optional[EmailStr] = Field(
         None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
-    affiliation_id: Optional[int] = Field(
+    affiliation: Optional[str] = Field(
         None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
     department_id: Optional[int] = Field(
@@ -152,6 +152,18 @@ class User(BaseModel):
     role: Optional[UserRole] = Field(
         None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
+
+    class Config:
+        orm_mode = True
+
+
+class PublicUser(BaseModel):
+    id: int
+    name: str
+    email: Optional[EmailStr] = None
+    affiliation: Optional[str] = None
+    department_id: Optional[int] = None
+    role: Optional[UserRole] = None
 
     class Config:
         orm_mode = True
@@ -169,11 +181,22 @@ class ApproverSetupRequest(BaseModel):
     last_name: str
     name: Optional[str] = None
     email: EmailStr
-    affiliation_id: Optional[int] = None
+    affiliation: Optional[str] = None
+
+
+class ApplicationManagerSetupRequest(BaseModel):
+    account_name: str = Field(..., pattern=r"^[a-z][a-z0-9_-]{2,31}$")
+    first_name: str
+    middle_name: Optional[str] = None
+    last_name: str
+    name: Optional[str] = None
+    email: EmailStr
+    affiliation: Optional[str] = None
+    password: str
 
 
 class ApplicationManagerSetupResponse(BaseModel):
-    user: User
+    user: PublicUser
     token: Token
 
 

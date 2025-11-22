@@ -45,7 +45,10 @@ def register_initial_application_manager():
     response = client.post(
         "/auth/application-manager-setup",
         json={
+            "account_name": "app_manager",
             "name": "Initial Application Manager",
+            "first_name": "Initial",
+            "last_name": "Manager",
             "email": "manager@beamtime.org",
             "affiliation": "Lab",
             "password": "initpass",
@@ -54,6 +57,11 @@ def register_initial_application_manager():
     assert response.status_code == 201
     data = response.json()
     return data["user"]["id"], data["token"]["access_token"]
+
+
+def register_initial_approver():
+    """Alias for creating the initial privileged user used across tests."""
+    return register_initial_application_manager()
 
 
 def auth_headers(token: str) -> dict:
@@ -77,7 +85,16 @@ def create_department(token: str) -> int:
 
 
 def create_user(payload, token, department_id):
+    name = payload.get("name", "user")
+    if " " in name:
+        first_name, last_name = name.split(" ", 1)
+    else:
+        first_name = last_name = name
+    account_name = payload.get("account_name", name.lower().replace(" ", "_"))
     full_payload = payload | {
+        "account_name": account_name,
+        "first_name": payload.get("first_name", first_name),
+        "last_name": payload.get("last_name", last_name),
         "password": payload.get("password", "testpass"),
         "department_id": department_id,
     }

@@ -56,6 +56,13 @@ def build_full_name(first_name: str, last_name: str, middle_name: str | None = N
     parts.append(last_name)
     return " ".join(parts)
 
+
+def application_manager_exists(db: Session) -> bool:
+    role = db.query(models.Role).filter(models.Role.slug == models.UserRole.APPLICATION_MANAGER).first()
+    if not role:
+        return False
+    return db.query(models.User).filter(models.User.role == role).first() is not None
+
 app = FastAPI(title="Beamtime Management API")
 
 app.state.session_cookie = os.environ.get("SESSION_COOKIE_NAME", "session")
@@ -296,7 +303,7 @@ def application_manager_setup(
         )
 
     access_token = create_access_token(
-        data={"sub": str(db_user.id), "role": db_user.role.slug.value},
+        data={"sub": str(db_user.id), "role": db_user.role.value},
         expires_delta=timedelta(minutes=60),
     )
     return schemas.ApplicationManagerSetupResponse(
@@ -388,7 +395,7 @@ def login(payload: schemas.LoginRequest, response: Response, db: Session = Depen
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-@app.post("/users/", response_model=schemas.User)
+@app.post("/users/", response_model=schemas.PublicUser)
 def create_user(
     user: schemas.UserCreate,
     db: Session = Depends(get_db),
@@ -429,13 +436,13 @@ def create_user(
         )
 
 
-@app.get("/users/", response_model=List[schemas.User])
+@app.get("/users/", response_model=List[schemas.PublicUser])
 def list_users(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    users = db.query(models.User).order_by(models.User.account_name.asc()).all()
+    users = db.query(models.User).order_by(models.User.name.asc()).all()
     return [redact_user_payload(user, current_user) for user in users]
 
 
-@app.get("/users/{user_id}", response_model=schemas.User)
+@app.get("/users/{user_id}", response_model=schemas.PublicUser)
 def get_user(
     user_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)
 ):
@@ -445,7 +452,7 @@ def get_user(
     return redact_user_payload(db_user, current_user)
 
 
-@app.put("/users/{user_id}", response_model=schemas.User)
+@app.put("/users/{user_id}", response_model=schemas.PublicUser)
 def update_user(
     user_id: int,
     payload: schemas.UserUpdate,

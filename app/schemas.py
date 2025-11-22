@@ -7,6 +7,42 @@ from .authorization import AccessLevel
 from .models import AllocationStatus, RequestStatus
 
 
+class InstitutionBase(BaseModel):
+    name: str
+
+
+class InstitutionCreate(InstitutionBase):
+    pass
+
+
+class Institution(InstitutionBase):
+    id: int
+
+    class Config:
+        orm_mode = True
+
+
+class DepartmentBase(BaseModel):
+    name: str
+    institution_id: int
+
+
+class DepartmentCreate(DepartmentBase):
+    pass
+
+
+class DepartmentUpdate(BaseModel):
+    name: Optional[str] = None
+    institution_id: Optional[int] = None
+
+
+class Department(DepartmentBase):
+    id: int
+
+    class Config:
+        orm_mode = True
+
+
 class UserBase(BaseModel):
     account_name: str = Field(
         ...,
@@ -34,12 +70,17 @@ class UserBase(BaseModel):
         None,
         json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER},
     )
-    role_id: int = Field(
+    department_id: Optional[int] = Field(
+        None,
+        json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER},
+    )
+    role: UserRole = Field(
         ..., json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
 
 
 class UserCreate(UserBase):
+    department_id: int
     password: str
 
 
@@ -67,7 +108,11 @@ class UserUpdate(BaseModel):
     affiliation_id: Optional[int] = Field(
         None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
-    role_id: Optional[int] = Field(
+    department_id: Optional[int] = Field(
+        None,
+        json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER},
+    )
+    role: Optional[UserRole] = Field(
         None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
     password: Optional[str] = Field(
@@ -100,7 +145,11 @@ class User(BaseModel):
     affiliation_id: Optional[int] = Field(
         None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
-    role_id: Optional[int] = Field(
+    department_id: Optional[int] = Field(
+        None,
+        json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER},
+    )
+    role: Optional[UserRole] = Field(
         None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
 

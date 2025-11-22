@@ -40,8 +40,13 @@ USER_FIELD_ACCESS: dict[str, FieldAccess] = {
     "last_name": FieldAccess(read=AccessLevel.PROJECT_MANAGER, write=AccessLevel.PROJECT_MANAGER),
     "name": FieldAccess(read=AccessLevel.PROJECT_MANAGER, write=AccessLevel.PROJECT_MANAGER),
     "email": FieldAccess(read=AccessLevel.PROJECT_MANAGER, write=AccessLevel.PROJECT_MANAGER),
-    "affiliation_id": FieldAccess(read=AccessLevel.PROJECT_MANAGER, write=AccessLevel.PROJECT_MANAGER),
-    "role_id": FieldAccess(read=AccessLevel.PROJECT_MANAGER, write=AccessLevel.PROJECT_MANAGER),
+    "affiliation": FieldAccess(
+        read=AccessLevel.PROJECT_MANAGER, write=AccessLevel.PROJECT_MANAGER
+    ),
+    "department_id": FieldAccess(
+        read=AccessLevel.PROJECT_MANAGER, write=AccessLevel.PROJECT_MANAGER
+    ),
+    "role": FieldAccess(read=AccessLevel.PROJECT_MANAGER, write=AccessLevel.PROJECT_MANAGER),
     "password_hash": FieldAccess(read=AccessLevel.SELF, write=AccessLevel.SELF),
 }
 
@@ -104,8 +109,9 @@ def redact_user_payload(target: User, actor: User) -> dict:
         "last_name": target.last_name,
         "name": target.name,
         "email": target.email,
-        "affiliation_id": target.affiliation_id,
-        "role_id": target.role_id,
+        "affiliation": target.affiliation,
+        "department_id": target.department_id,
+        "role": target.role,
     }
     for field, requirement in USER_FIELD_ACCESS.items():
         if field not in payload:

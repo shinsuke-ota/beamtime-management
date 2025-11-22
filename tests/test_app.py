@@ -60,8 +60,27 @@ def auth_headers(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-def create_user(payload, token):
-    full_payload = payload | {"password": payload.get("password", "testpass")}
+def create_department(token: str) -> int:
+    institution_resp = client.post(
+        "/institutions/", json={"name": "Test Institution"}, headers=auth_headers(token)
+    )
+    assert institution_resp.status_code == 201
+    institution_id = institution_resp.json()["id"]
+
+    department_resp = client.post(
+        "/departments/",
+        json={"name": "Test Department", "institution_id": institution_id},
+        headers=auth_headers(token),
+    )
+    assert department_resp.status_code == 201
+    return department_resp.json()["id"]
+
+
+def create_user(payload, token, department_id):
+    full_payload = payload | {
+        "password": payload.get("password", "testpass"),
+        "department_id": department_id,
+    }
     response = client.post("/users/", json=full_payload, headers=auth_headers(token))
     assert response.status_code == 200
     return response.json()["id"]
@@ -69,25 +88,26 @@ def create_user(payload, token):
 
 def test_full_workflow():
     reset_database()
-    approver_id, approver_token = register_initial_application_manager()
+    approver_id, approver_token = register_initial_approver()
+    department_id = create_department(approver_token)
     pi_id = create_user({
         "name": "Dr. PI",
         "email": "pi@example.com",
         "affiliation": "Lab",
         "role": "PI",
-    }, approver_token)
+    }, approver_token, department_id)
     manager_id = create_user({
         "name": "Manager",
         "email": "manager@example.com",
         "affiliation": "Lab",
         "role": "PROJECT_MANAGER",
-    }, approver_token)
+    }, approver_token, department_id)
     allocator_id = create_user({
         "name": "Allocator",
         "email": "allocator@example.com",
         "affiliation": "Lab",
         "role": "ALLOCATOR",
-    }, approver_token)
+    }, approver_token, department_id)
 
     project_payload = {
         "title": "Project A",
@@ -162,7 +182,8 @@ def test_full_workflow():
 
 def test_list_users_returns_ordered_users():
     reset_database()
-    initial_id, approver_token = register_initial_application_manager()
+    initial_id, approver_token = register_initial_approver()
+    department_id = create_department(approver_token)
     users = [
         {
             "name": "Charlie",
@@ -186,7 +207,7 @@ def test_list_users_returns_ordered_users():
             "password": "testpass",
         },
     ]
-    created_ids = [create_user(payload, approver_token) for payload in users]
+    created_ids = [create_user(payload, approver_token, department_id) for payload in users]
 
     response = client.get("/users/", headers=auth_headers(approver_token))
     assert response.status_code == 200
@@ -202,7 +223,8 @@ def test_list_users_returns_ordered_users():
 
 def test_get_user_by_id():
     reset_database()
-    _, approver_token = register_initial_application_manager()
+    _, approver_token = register_initial_approver()
+    department_id = create_department(approver_token)
     user_id = create_user(
         {
             "name": "Eve",
@@ -212,6 +234,7 @@ def test_get_user_by_id():
             "password": "testpass",
         },
         approver_token,
+        department_id,
     )
 
     response = client.get(f"/users/{user_id}", headers=auth_headers(approver_token))
@@ -221,5 +244,6 @@ def test_get_user_by_id():
         "name": "Eve",
         "email": "eve@example.com",
         "affiliation": "Lab",
+        "department_id": department_id,
         "role": "PROJECT_MANAGER",
     }

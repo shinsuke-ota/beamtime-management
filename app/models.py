@@ -45,6 +45,7 @@ class User(Base):
     email = Column(String, unique=True, nullable=False, index=True)
     affiliation = Column(String, nullable=True)
     role = Column(Enum(UserRole), nullable=False)
+    password_hash = Column(String, nullable=False)
 
     projects = relationship("ResearchProject", back_populates="pi", foreign_keys="ResearchProject.pi_id")
     managed_projects = relationship(

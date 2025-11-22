@@ -1,3 +1,4 @@
+import os
 from collections import defaultdict
 from datetime import datetime
 from typing import List
@@ -14,12 +15,22 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Beamtime Management API")
 
+# Allow overriding CORS origins via environment variable; default to common local Vite ports.
+_default_origins = {
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
+}
+allowed_origins = os.environ.get("ALLOWED_ORIGINS")
+if allowed_origins:
+    origins = [origin.strip() for origin in allowed_origins.split(",") if origin.strip()]
+else:
+    origins = sorted(_default_origins)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

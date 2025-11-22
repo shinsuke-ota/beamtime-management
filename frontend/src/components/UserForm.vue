@@ -147,7 +147,8 @@ const submit = async () => {
     emit('updated');
   } catch (err) {
     console.error(err);
-    submitError.value = 'Unable to update user right now. Please try again later.';
+    submitError.value = err.response?.data?.detail
+      ?? 'Unable to update user right now. Please try again later.';
   } finally {
     saving.value = false;
   }

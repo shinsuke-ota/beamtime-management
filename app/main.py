@@ -5,6 +5,7 @@ from typing import List
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import models, schemas
@@ -64,9 +65,17 @@ def update_user(user_id: int, payload: schemas.UserUpdate, db: Session = Depends
     db_user = db.query(models.User).filter(models.User.id == user_id).first()
     if not db_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    for field, value in payload.dict(exclude_unset=True).items():
-        setattr(db_user, field, value)
-    db.commit()
+    update_data = payload.dict(exclude_unset=True)
+    try:
+        for field, value in update_data.items():
+            setattr(db_user, field, value)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email address already exists",
+        )
     db.refresh(db_user)
     return db_user
 

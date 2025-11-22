@@ -16,27 +16,39 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "institutions",
-        sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("name", sa.String(), nullable=False),
-        sa.UniqueConstraint("name", name="uq_institution_name"),
-    )
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
 
-    op.create_table(
-        "departments",
-        sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("name", sa.String(), nullable=False),
-        sa.Column("institution_id", sa.Integer(), sa.ForeignKey("institutions.id"), nullable=False),
-        sa.UniqueConstraint("institution_id", "name", name="uq_department_institution_name"),
-    )
+    if not inspector.has_table("institutions"):
+        op.create_table(
+            "institutions",
+            sa.Column("id", sa.Integer(), primary_key=True),
+            sa.Column("name", sa.String(), nullable=False),
+            sa.UniqueConstraint("name", name="uq_institution_name"),
+        )
 
-    op.add_column(
-        "users",
-        sa.Column(
-            "department_id", sa.Integer(), sa.ForeignKey("departments.id"), nullable=True
-        ),
-    )
+    if not inspector.has_table("departments"):
+        op.create_table(
+            "departments",
+            sa.Column("id", sa.Integer(), primary_key=True),
+            sa.Column("name", sa.String(), nullable=False),
+            sa.Column(
+                "institution_id",
+                sa.Integer(),
+                sa.ForeignKey("institutions.id"),
+                nullable=False,
+            ),
+            sa.UniqueConstraint("institution_id", "name", name="uq_department_institution_name"),
+        )
+
+    user_columns = {column["name"] for column in inspector.get_columns("users")}
+    if "department_id" not in user_columns:
+        op.add_column(
+            "users",
+            sa.Column(
+                "department_id", sa.Integer(), sa.ForeignKey("departments.id"), nullable=True
+            ),
+        )
 
 
 def downgrade() -> None:

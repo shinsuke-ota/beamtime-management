@@ -51,7 +51,8 @@ const router = useRouter();
 const links = [
   { title: 'Schedules', to: '/', icon: 'mdi-calendar-clock' },
   { title: 'Management', to: '/management', icon: 'mdi-clipboard-list-outline' },
-  { title: 'Users', to: '/users', icon: 'mdi-account-group' }
+  { title: 'Users', to: '/users', icon: 'mdi-account-group' },
+  { title: 'Approver Setup', to: '/approver-setup', icon: 'mdi-shield-account' }
 ];
 
 const refresh = async () => {

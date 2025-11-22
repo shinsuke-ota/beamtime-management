@@ -121,7 +121,7 @@ const loadUsers = async () => {
   loading.value = true;
   error.value = '';
   try {
-    const { data } = await get('/users');
+    const { data } = await get('/users/');
     users.value = data;
   } catch (err) {
     console.error(err);

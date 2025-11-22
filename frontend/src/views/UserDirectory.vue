@@ -6,6 +6,7 @@
         <p class="text-body-2 text-medium-emphasis mb-0">Browse and manage users across the facility.</p>
       </div>
       <div class="d-flex ga-2 align-center">
+        <v-btn color="primary" prepend-icon="mdi-account-plus" @click="openCreateDialog">New User</v-btn>
         <v-btn icon="mdi-refresh" :loading="loading" variant="tonal" @click="refreshDirectory" />
       </div>
     </div>
@@ -72,12 +73,66 @@
         <div class="text-center py-6 text-medium-emphasis">No users match the current filters.</div>
       </template>
     </v-data-table>
+
+    <v-dialog v-model="showCreateDialog" max-width="520">
+      <v-card title="Create User">
+        <v-card-text>
+          <v-form ref="createForm" v-model="createFormValid" validate-on="submit lazy" @submit.prevent="submitNewUser">
+            <v-alert
+              v-if="creationError"
+              type="error"
+              border="start"
+              class="mb-4"
+              density="compact"
+              :text="creationError"
+            />
+            <v-text-field
+              v-model="newUser.name"
+              label="Name"
+              density="comfortable"
+              :rules="[requiredRule]"
+            />
+            <v-text-field
+              v-model="newUser.email"
+              label="Email"
+              density="comfortable"
+              type="email"
+              :rules="[requiredRule]"
+            />
+            <v-text-field
+              v-model="newUser.affiliation"
+              label="Affiliation"
+              density="comfortable"
+            />
+            <v-select
+              v-model="newUser.role"
+              :items="roleChoices"
+              label="Role"
+              density="comfortable"
+              :rules="[requiredRule]"
+            />
+          </v-form>
+        </v-card-text>
+        <v-card-actions class="justify-end">
+          <v-btn variant="text" @click="closeCreateDialog">Cancel</v-btn>
+          <v-btn
+            color="primary"
+            prepend-icon="mdi-content-save"
+            :loading="createLoading"
+            :disabled="createLoading"
+            @click="submitNewUser"
+          >
+            Save
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </v-card>
 </template>
 
 <script setup>
 import { computed, onMounted, ref } from 'vue';
-import { get } from '../services/api';
+import { get, post } from '../services/api';
 
 const emit = defineEmits(['refresh']);
 
@@ -87,6 +142,17 @@ const error = ref('');
 const search = ref('');
 const roleFilter = ref(null);
 const affiliationFilter = ref(null);
+const showCreateDialog = ref(false);
+const createLoading = ref(false);
+const createFormValid = ref(false);
+const creationError = ref('');
+const createForm = ref(null);
+const newUser = ref({
+  name: '',
+  email: '',
+  affiliation: '',
+  role: ''
+});
 
 const headers = [
   { title: 'Name', value: 'name' },
@@ -105,6 +171,8 @@ const affiliationOptions = computed(() => {
   const affiliations = users.value.map(user => user.affiliation).filter(Boolean);
   return Array.from(new Set(affiliations)).sort();
 });
+
+const roleChoices = ['PI', 'PROJECT_MANAGER', 'ALLOCATOR', 'APPROVER'];
 
 const filteredUsers = computed(() =>
   users.value.filter(user => {
@@ -135,6 +203,41 @@ const loadUsers = async () => {
 const refreshDirectory = async () => {
   await loadUsers();
   emit('refresh');
+};
+
+const resetCreateForm = () => {
+  newUser.value = { name: '', email: '', affiliation: '', role: '' };
+  creationError.value = '';
+  createForm.value?.resetValidation?.();
+};
+
+const openCreateDialog = () => {
+  resetCreateForm();
+  showCreateDialog.value = true;
+};
+
+const closeCreateDialog = () => {
+  showCreateDialog.value = false;
+};
+
+const requiredRule = value => !!value || 'This field is required';
+
+const submitNewUser = async () => {
+  const { valid } = (await createForm.value?.validate?.()) ?? { valid: true };
+  if (!valid) return;
+
+  createLoading.value = true;
+  creationError.value = '';
+  try {
+    await post('/users/', newUser.value);
+    closeCreateDialog();
+    await refreshDirectory();
+  } catch (err) {
+    console.error(err);
+    creationError.value = 'Unable to create user right now. Please try again later.';
+  } finally {
+    createLoading.value = false;
+  }
 };
 
 onMounted(loadUsers);

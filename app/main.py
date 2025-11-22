@@ -1,7 +1,7 @@
 import os
 from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import List
+from typing import List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,6 +30,32 @@ from .dependencies import (
 
 Base.metadata.create_all(bind=engine)
 
+
+def get_role_by_id(db: Session, role_id: int) -> models.Role:
+    role = db.query(models.Role).filter(models.Role.id == role_id).first()
+    if not role:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role id")
+    return role
+
+
+def get_or_create_role(db: Session, slug: models.UserRole) -> models.Role:
+    role = db.query(models.Role).filter(models.Role.slug == slug).first()
+    if role:
+        return role
+    role = models.Role(slug=slug, display_name=slug.replace("_", " ").title())
+    db.add(role)
+    db.commit()
+    db.refresh(role)
+    return role
+
+
+def build_full_name(first_name: str, last_name: str, middle_name: str | None = None) -> str:
+    parts = [first_name]
+    if middle_name:
+        parts.append(middle_name)
+    parts.append(last_name)
+    return " ".join(parts)
+
 app = FastAPI(title="Beamtime Management API")
 
 app.state.session_cookie = os.environ.get("SESSION_COOKIE_NAME", "session")
@@ -57,16 +83,188 @@ app.add_middleware(
 )
 
 
+def get_institution_or_404(db: Session, institution_id: int) -> models.Institution:
+    institution = db.query(models.Institution).filter(models.Institution.id == institution_id).first()
+    if not institution:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Institution not found")
+    return institution
+
+
+def get_department_or_404(db: Session, department_id: int) -> models.Department:
+    department = db.query(models.Department).filter(models.Department.id == department_id).first()
+    if not department:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
+    return department
+
+
 @app.post(
-    "/auth/approver-setup",
-    response_model=schemas.ApproverSetupResponse,
+    "/institutions/",
+    response_model=schemas.Institution,
     status_code=status.HTTP_201_CREATED,
 )
-def approver_setup(payload: schemas.ApproverSetupRequest, db: Session = Depends(get_db)):
-    if db.query(models.User).count() > 0:
+def create_institution(
+    payload: schemas.InstitutionCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    ensure_level(
+        current_user, AccessLevel.APPROVER, "Only approvers can create institutions"
+    )
+    institution = models.Institution(name=payload.name)
+    try:
+        db.add(institution)
+        db.commit()
+        db.refresh(institution)
+        return institution
+    except IntegrityError:
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="An approver is already registered",
+            detail="An institution with that name already exists",
+        )
+
+
+@app.get("/institutions/", response_model=List[schemas.Institution])
+def list_institutions(db: Session = Depends(get_db)):
+    return db.query(models.Institution).order_by(models.Institution.name.asc()).all()
+
+
+@app.get("/institutions/{institution_id}", response_model=schemas.Institution)
+def get_institution(institution_id: int, db: Session = Depends(get_db)):
+    return get_institution_or_404(db, institution_id)
+
+
+@app.put("/institutions/{institution_id}", response_model=schemas.Institution)
+def update_institution(
+    institution_id: int,
+    payload: schemas.InstitutionCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    ensure_level(
+        current_user, AccessLevel.APPROVER, "Only approvers can update institutions"
+    )
+    institution = get_institution_or_404(db, institution_id)
+    institution.name = payload.name
+    try:
+        db.commit()
+        db.refresh(institution)
+        return institution
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An institution with that name already exists",
+        )
+
+
+@app.delete("/institutions/{institution_id}")
+def delete_institution(
+    institution_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    ensure_level(
+        current_user, AccessLevel.APPROVER, "Only approvers can delete institutions"
+    )
+    institution = get_institution_or_404(db, institution_id)
+    db.delete(institution)
+    db.commit()
+    return {"detail": "Institution deleted"}
+
+
+@app.post(
+    "/departments/",
+    response_model=schemas.Department,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_department(
+    payload: schemas.DepartmentCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    ensure_level(current_user, AccessLevel.APPROVER, "Only approvers can create departments")
+    get_institution_or_404(db, payload.institution_id)
+    department = models.Department(**payload.dict())
+    try:
+        db.add(department)
+        db.commit()
+        db.refresh(department)
+        return department
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A department with that name already exists for this institution",
+        )
+
+
+@app.get("/departments/", response_model=List[schemas.Department])
+def list_departments(
+    institution_id: Optional[int] = None, db: Session = Depends(get_db)
+):
+    query = db.query(models.Department)
+    if institution_id is not None:
+        query = query.filter(models.Department.institution_id == institution_id)
+    return query.order_by(models.Department.name.asc()).all()
+
+
+@app.get("/departments/{department_id}", response_model=schemas.Department)
+def get_department(department_id: int, db: Session = Depends(get_db)):
+    return get_department_or_404(db, department_id)
+
+
+@app.put("/departments/{department_id}", response_model=schemas.Department)
+def update_department(
+    department_id: int,
+    payload: schemas.DepartmentUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    ensure_level(current_user, AccessLevel.APPROVER, "Only approvers can update departments")
+    department = get_department_or_404(db, department_id)
+    update_data = payload.dict(exclude_unset=True)
+    if "institution_id" in update_data:
+        get_institution_or_404(db, update_data["institution_id"])
+    for field, value in update_data.items():
+        setattr(department, field, value)
+    try:
+        db.commit()
+        db.refresh(department)
+        return department
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A department with that name already exists for this institution",
+        )
+
+
+@app.delete("/departments/{department_id}")
+def delete_department(
+    department_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    ensure_level(current_user, AccessLevel.APPROVER, "Only approvers can delete departments")
+    department = get_department_or_404(db, department_id)
+    db.delete(department)
+    db.commit()
+    return {"detail": "Department deleted"}
+
+
+@app.post(
+    "/auth/application-manager-setup",
+    response_model=schemas.ApplicationManagerSetupResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def application_manager_setup(
+    payload: schemas.ApplicationManagerSetupRequest, db: Session = Depends(get_db)
+):
+    if application_manager_exists(db):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An Application Manager is already registered",
         )
     try:
         validate_email(payload.email)
@@ -74,12 +272,18 @@ def approver_setup(payload: schemas.ApproverSetupRequest, db: Session = Depends(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
     try:
+        approver_role = get_or_create_role(db, models.UserRole.APPROVER)
         db_user = models.User(
-            name=payload.name,
+            account_name=payload.account_name,
+            first_name=payload.first_name,
+            middle_name=payload.middle_name,
+            last_name=payload.last_name,
+            name=payload.name
+            or build_full_name(payload.first_name, payload.last_name, payload.middle_name),
             email=payload.email,
             affiliation=payload.affiliation,
-            role=models.UserRole.APPROVER,
-            password_hash=get_password_hash(payload.email),
+            role=models.UserRole.APPLICATION_MANAGER,
+            password_hash=get_password_hash(payload.password),
         )
         db.add(db_user)
         db.commit()
@@ -92,10 +296,10 @@ def approver_setup(payload: schemas.ApproverSetupRequest, db: Session = Depends(
         )
 
     access_token = create_access_token(
-        data={"sub": str(db_user.id), "role": db_user.role.value},
+        data={"sub": str(db_user.id), "role": db_user.role.slug.value},
         expires_delta=timedelta(minutes=60),
     )
-    return schemas.ApproverSetupResponse(
+    return schemas.ApplicationManagerSetupResponse(
         user=redact_user_payload(db_user, db_user),
         token=schemas.Token(access_token=access_token),
     )
@@ -103,13 +307,13 @@ def approver_setup(payload: schemas.ApproverSetupRequest, db: Session = Depends(
 
 @app.post("/auth/signup", response_model=schemas.User, status_code=status.HTTP_201_CREATED)
 def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    total_users = db.query(models.User).count()
-    if total_users == 0:
+    if not application_manager_exists(db):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Use approver setup to register the first user",
+            detail="Register an Application Manager before self-service signup",
         )
-    if total_users > 0 and user.role != models.UserRole.PI:
+    role = get_role_by_id(db, user.role_id)
+    if total_users > 0 and role.slug != models.UserRole.PI:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Self-service signup is allowed only for PIs",
@@ -118,11 +322,17 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
         validate_email(user.email)
     except EmailNotValidError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    get_department_or_404(db, user.department_id)
     try:
         db_user = models.User(
-            name=user.name,
+            account_name=user.account_name,
+            first_name=user.first_name,
+            middle_name=user.middle_name,
+            last_name=user.last_name,
+            name=user.name or build_full_name(user.first_name, user.last_name, user.middle_name),
             email=user.email,
             affiliation=user.affiliation,
+            department_id=user.department_id,
             role=user.role,
             password_hash=get_password_hash(user.password),
         )
@@ -153,7 +363,7 @@ def login(payload: schemas.LoginRequest, response: Response, db: Session = Depen
             headers={"WWW-Authenticate": "Bearer"},
         )
     access_token = create_access_token(
-        data={"sub": str(db_user.id), "role": db_user.role.value},
+        data={"sub": str(db_user.id), "role": db_user.role.slug.value},
         expires_delta=timedelta(minutes=60),
     )
     session_ttl = timedelta(minutes=app.state.session_ttl_minutes)
@@ -184,15 +394,25 @@ def create_user(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    ensure_level(current_user, AccessLevel.APPROVER, "Only approvers can create new users")
+    ensure_level(
+        current_user,
+        AccessLevel.APPLICATION_MANAGER,
+        "Only Application Managers can create new users",
+    )
     try:
         validate_email(user.email)
     except EmailNotValidError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    get_department_or_404(db, user.department_id)
     db_user = models.User(
-        name=user.name,
+        account_name=user.account_name,
+        first_name=user.first_name,
+        middle_name=user.middle_name,
+        last_name=user.last_name,
+        name=user.name or build_full_name(user.first_name, user.last_name, user.middle_name),
         email=user.email,
         affiliation=user.affiliation,
+        department_id=user.department_id,
         role=user.role,
         password_hash=get_password_hash(user.password),
     )
@@ -211,7 +431,7 @@ def create_user(
 
 @app.get("/users/", response_model=List[schemas.User])
 def list_users(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    users = db.query(models.User).order_by(models.User.name.asc()).all()
+    users = db.query(models.User).order_by(models.User.account_name.asc()).all()
     return [redact_user_payload(user, current_user) for user in users]
 
 
@@ -241,9 +461,17 @@ def update_user(
             validate_email(update_data["email"])
         except EmailNotValidError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    if "department_id" in update_data and update_data["department_id"] is not None:
+        get_department_or_404(db, update_data["department_id"])
     password = update_data.pop("password", None)
     if password:
         update_data["password_hash"] = get_password_hash(password)
+    if any(field in update_data for field in ["first_name", "last_name", "middle_name"]):
+        update_data.setdefault("name", build_full_name(
+            update_data.get("first_name", db_user.first_name),
+            update_data.get("last_name", db_user.last_name),
+            update_data.get("middle_name", db_user.middle_name),
+        ))
     ensure_user_field_access(current_user, db_user, "write", update_data.keys())
     try:
         for field, value in update_data.items():

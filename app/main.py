@@ -1,6 +1,6 @@
 import os
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List
 
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -10,7 +10,14 @@ from sqlalchemy.orm import Session
 
 from . import models, schemas
 from .database import Base, engine
-from .dependencies import ensure_role, get_db
+from .dependencies import (
+    create_access_token,
+    ensure_role,
+    get_current_user,
+    get_db,
+    get_password_hash,
+    verify_password,
+)
 
 Base.metadata.create_all(bind=engine)
 
@@ -38,22 +45,95 @@ app.add_middleware(
 )
 
 
+@app.post("/auth/signup", response_model=schemas.User, status_code=status.HTTP_201_CREATED)
+def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    total_users = db.query(models.User).count()
+    if total_users == 0 and user.role != models.UserRole.APPROVER:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The first registered user must be an approver",
+        )
+    if total_users > 0 and user.role != models.UserRole.PI:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Self-service signup is allowed only for PIs",
+        )
+    try:
+        db_user = models.User(
+            name=user.name,
+            email=user.email,
+            affiliation=user.affiliation,
+            role=user.role,
+            password_hash=get_password_hash(user.password),
+        )
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
+        return db_user
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A user with that email already exists",
+        )
+
+
+@app.post("/auth/login", response_model=schemas.Token)
+def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
+    db_user = db.query(models.User).filter(models.User.email == payload.email).first()
+    if not db_user or not verify_password(payload.password, db_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token = create_access_token(
+        data={"sub": str(db_user.id), "role": db_user.role.value},
+        expires_delta=timedelta(minutes=60),
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
 @app.post("/users/", response_model=schemas.User)
-def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    db_user = models.User(**user.dict())
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    return db_user
+def create_user(
+    user: schemas.UserCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    if current_user.role != models.UserRole.APPROVER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only approvers can create new users",
+        )
+    db_user = models.User(
+        name=user.name,
+        email=user.email,
+        affiliation=user.affiliation,
+        role=user.role,
+        password_hash=get_password_hash(user.password),
+    )
+    try:
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
+        return db_user
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A user with that email already exists",
+        )
 
 
 @app.get("/users/", response_model=List[schemas.User])
-def list_users(db: Session = Depends(get_db)):
+def list_users(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     return db.query(models.User).order_by(models.User.name.asc()).all()
 
 
 @app.get("/users/{user_id}", response_model=schemas.User)
-def get_user(user_id: int, db: Session = Depends(get_db)):
+def get_user(
+    user_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)
+):
     db_user = db.query(models.User).filter(models.User.id == user_id).first()
     if not db_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -61,11 +141,19 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
 
 
 @app.put("/users/{user_id}", response_model=schemas.User)
-def update_user(user_id: int, payload: schemas.UserUpdate, db: Session = Depends(get_db)):
+def update_user(
+    user_id: int,
+    payload: schemas.UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     db_user = db.query(models.User).filter(models.User.id == user_id).first()
     if not db_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     update_data = payload.dict(exclude_unset=True)
+    password = update_data.pop("password", None)
+    if password:
+        update_data["password_hash"] = get_password_hash(password)
     try:
         for field, value in update_data.items():
             setattr(db_user, field, value)
@@ -81,13 +169,21 @@ def update_user(user_id: int, payload: schemas.UserUpdate, db: Session = Depends
 
 
 @app.get("/users/{user_id}/projects", response_model=List[schemas.Project])
-def list_projects_for_pi(user_id: int, db: Session = Depends(get_db)):
+def list_projects_for_pi(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     ensure_role(db, user_id, models.UserRole.PI)
     return db.query(models.ResearchProject).filter(models.ResearchProject.pi_id == user_id).all()
 
 
 @app.post("/projects/", response_model=schemas.Project)
-def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)):
+def create_project(
+    project: schemas.ProjectCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     ensure_role(db, project.manager_id, models.UserRole.PROJECT_MANAGER)
     ensure_role(db, project.pi_id, models.UserRole.PI)
     db_project = models.ResearchProject(**project.dict())
@@ -98,7 +194,12 @@ def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)
 
 
 @app.put("/projects/{project_id}", response_model=schemas.Project)
-def update_project(project_id: int, payload: schemas.ProjectUpdate, db: Session = Depends(get_db)):
+def update_project(
+    project_id: int,
+    payload: schemas.ProjectUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     db_project = db.query(models.ResearchProject).filter(models.ResearchProject.id == project_id).first()
     if not db_project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
@@ -115,7 +216,9 @@ def update_project(project_id: int, payload: schemas.ProjectUpdate, db: Session 
 
 
 @app.delete("/projects/{project_id}")
-def delete_project(project_id: int, db: Session = Depends(get_db)):
+def delete_project(
+    project_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)
+):
     db_project = db.query(models.ResearchProject).filter(models.ResearchProject.id == project_id).first()
     if not db_project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
@@ -125,7 +228,13 @@ def delete_project(project_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/projects/{project_id}/requests", response_model=schemas.BeamtimeRequest)
-def create_request(project_id: int, payload: schemas.BeamtimeRequestCreate, pi_id: int, db: Session = Depends(get_db)):
+def create_request(
+    project_id: int,
+    payload: schemas.BeamtimeRequestCreate,
+    pi_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     project = db.query(models.ResearchProject).filter(models.ResearchProject.id == project_id).first()
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
@@ -140,7 +249,9 @@ def create_request(project_id: int, payload: schemas.BeamtimeRequestCreate, pi_i
 
 
 @app.get("/projects/{project_id}/requests", response_model=List[schemas.BeamtimeRequest])
-def list_requests(project_id: int, db: Session = Depends(get_db)):
+def list_requests(
+    project_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)
+):
     project = db.query(models.ResearchProject).filter(models.ResearchProject.id == project_id).first()
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
@@ -148,7 +259,9 @@ def list_requests(project_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/managers/{manager_id}/requests", response_model=List[schemas.BeamtimeRequest])
-def manager_requests(manager_id: int, db: Session = Depends(get_db)):
+def manager_requests(
+    manager_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)
+):
     ensure_role(db, manager_id, models.UserRole.PROJECT_MANAGER)
     project_ids = [p.id for p in db.query(models.ResearchProject).filter(models.ResearchProject.manager_id == manager_id)]
     if not project_ids:
@@ -162,6 +275,7 @@ def update_request_status(
     payload: schemas.BeamtimeRequestUpdate,
     manager_id: int,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     ensure_role(db, manager_id, models.UserRole.PROJECT_MANAGER)
     db_request = db.query(models.BeamtimeRequest).filter(models.BeamtimeRequest.id == request_id).first()
@@ -182,6 +296,7 @@ def create_allocation(
     payload: schemas.AllocationCreate,
     allocator_id: int,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     ensure_role(db, allocator_id, models.UserRole.ALLOCATOR)
     request = db.query(models.BeamtimeRequest).filter(models.BeamtimeRequest.id == request_id).first()
@@ -195,12 +310,14 @@ def create_allocation(
 
 
 @app.get("/allocations/", response_model=List[schemas.Allocation])
-def list_allocations(db: Session = Depends(get_db)):
+def list_allocations(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     return db.query(models.Allocation).all()
 
 
 @app.get("/allocations/table", response_model=List[schemas.AllocationTableRow])
-def allocation_table(db: Session = Depends(get_db)):
+def allocation_table(
+    db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)
+):
     allocations = (
         db.query(models.Allocation, models.ResearchProject)
         .join(models.BeamtimeRequest, models.BeamtimeRequest.id == models.Allocation.request_id)
@@ -226,6 +343,7 @@ def approve_allocation(
     allocation_id: int,
     payload: schemas.ApprovalCreate,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     ensure_role(db, payload.approver_id, models.UserRole.APPROVER)
     allocation = db.query(models.Allocation).filter(models.Allocation.id == allocation_id).first()
@@ -241,7 +359,9 @@ def approve_allocation(
 
 
 @app.get("/reports/monthly", response_model=List[schemas.MonthlyReportItem])
-def monthly_report(year: int, db: Session = Depends(get_db)):
+def monthly_report(
+    year: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)
+):
     report = defaultdict(lambda: {"requests": 0, "allocations": 0})
     start = datetime(year, 1, 1)
     end = datetime(year, 12, 31, 23, 59, 59)

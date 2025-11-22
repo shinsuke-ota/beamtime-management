@@ -72,6 +72,18 @@ db_url="sqlite:///./beamtime.db"  # or export DATABASE_URL
 alembic upgrade head
 ```
 
+SQLite users: the password-hash migration is now SQLite-safe and should
+complete on the first run. If you previously hit an error while dropping the
+column default, simply rerun `alembic upgrade head`—the migration will no longer
+fail, and the column will be created only if it does not yet exist.
+
+### Signup and initial approver
+- The **first** account created in a fresh database must be an `APPROVER`.
+  Attempting to register any other role first will be rejected.
+- After an approver exists, self-service signup is allowed only for the `PI`
+  role; all other roles must be created by an authenticated approver via the
+  `/users/` endpoint.
+
 During CI/CD or deployment, always run `alembic upgrade head` before starting
 application processes.
 

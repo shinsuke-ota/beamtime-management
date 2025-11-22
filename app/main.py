@@ -29,6 +29,32 @@ from .dependencies import (
 
 Base.metadata.create_all(bind=engine)
 
+
+def get_role_by_id(db: Session, role_id: int) -> models.Role:
+    role = db.query(models.Role).filter(models.Role.id == role_id).first()
+    if not role:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role id")
+    return role
+
+
+def get_or_create_role(db: Session, slug: models.UserRole) -> models.Role:
+    role = db.query(models.Role).filter(models.Role.slug == slug).first()
+    if role:
+        return role
+    role = models.Role(slug=slug, display_name=slug.replace("_", " ").title())
+    db.add(role)
+    db.commit()
+    db.refresh(role)
+    return role
+
+
+def build_full_name(first_name: str, last_name: str, middle_name: str | None = None) -> str:
+    parts = [first_name]
+    if middle_name:
+        parts.append(middle_name)
+    parts.append(last_name)
+    return " ".join(parts)
+
 app = FastAPI(title="Beamtime Management API")
 
 # Allow overriding CORS origins via environment variable; default to common local Vite ports.
@@ -224,15 +250,17 @@ def delete_department(
 
 
 @app.post(
-    "/auth/approver-setup",
-    response_model=schemas.ApproverSetupResponse,
+    "/auth/application-manager-setup",
+    response_model=schemas.ApplicationManagerSetupResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def approver_setup(payload: schemas.ApproverSetupRequest, db: Session = Depends(get_db)):
-    if db.query(models.User).count() > 0:
+def application_manager_setup(
+    payload: schemas.ApplicationManagerSetupRequest, db: Session = Depends(get_db)
+):
+    if application_manager_exists(db):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="An approver is already registered",
+            detail="An Application Manager is already registered",
         )
     try:
         validate_email(payload.email)
@@ -240,12 +268,18 @@ def approver_setup(payload: schemas.ApproverSetupRequest, db: Session = Depends(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
     try:
+        approver_role = get_or_create_role(db, models.UserRole.APPROVER)
         db_user = models.User(
-            name=payload.name,
+            account_name=payload.account_name,
+            first_name=payload.first_name,
+            middle_name=payload.middle_name,
+            last_name=payload.last_name,
+            name=payload.name
+            or build_full_name(payload.first_name, payload.last_name, payload.middle_name),
             email=payload.email,
             affiliation=payload.affiliation,
-            role=models.UserRole.APPROVER,
-            password_hash=get_password_hash(payload.email),
+            role=models.UserRole.APPLICATION_MANAGER,
+            password_hash=get_password_hash(payload.password),
         )
         db.add(db_user)
         db.commit()
@@ -258,10 +292,10 @@ def approver_setup(payload: schemas.ApproverSetupRequest, db: Session = Depends(
         )
 
     access_token = create_access_token(
-        data={"sub": str(db_user.id), "role": db_user.role.value},
+        data={"sub": str(db_user.id), "role": db_user.role.slug.value},
         expires_delta=timedelta(minutes=60),
     )
-    return schemas.ApproverSetupResponse(
+    return schemas.ApplicationManagerSetupResponse(
         user=redact_user_payload(db_user, db_user),
         token=schemas.Token(access_token=access_token),
     )
@@ -269,13 +303,13 @@ def approver_setup(payload: schemas.ApproverSetupRequest, db: Session = Depends(
 
 @app.post("/auth/signup", response_model=schemas.User, status_code=status.HTTP_201_CREATED)
 def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    total_users = db.query(models.User).count()
-    if total_users == 0:
+    if not application_manager_exists(db):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Use approver setup to register the first user",
+            detail="Register an Application Manager before self-service signup",
         )
-    if total_users > 0 and user.role != models.UserRole.PI:
+    role = get_role_by_id(db, user.role_id)
+    if total_users > 0 and role.slug != models.UserRole.PI:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Self-service signup is allowed only for PIs",
@@ -287,7 +321,11 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
     get_department_or_404(db, user.department_id)
     try:
         db_user = models.User(
-            name=user.name,
+            account_name=user.account_name,
+            first_name=user.first_name,
+            middle_name=user.middle_name,
+            last_name=user.last_name,
+            name=user.name or build_full_name(user.first_name, user.last_name, user.middle_name),
             email=user.email,
             affiliation=user.affiliation,
             department_id=user.department_id,
@@ -308,6 +346,11 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
 @app.post("/auth/login", response_model=schemas.Token)
 def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
+    if not application_manager_exists(db):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Application requires initial Application Manager setup",
+        )
     db_user = db.query(models.User).filter(models.User.email == payload.email).first()
     if not db_user or not verify_password(payload.password, db_user.password_hash):
         raise HTTPException(
@@ -316,7 +359,7 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
             headers={"WWW-Authenticate": "Bearer"},
         )
     access_token = create_access_token(
-        data={"sub": str(db_user.id), "role": db_user.role.value},
+        data={"sub": str(db_user.id), "role": db_user.role.slug.value},
         expires_delta=timedelta(minutes=60),
     )
     return {"access_token": access_token, "token_type": "bearer"}
@@ -328,14 +371,22 @@ def create_user(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    ensure_level(current_user, AccessLevel.APPROVER, "Only approvers can create new users")
+    ensure_level(
+        current_user,
+        AccessLevel.APPLICATION_MANAGER,
+        "Only Application Managers can create new users",
+    )
     try:
         validate_email(user.email)
     except EmailNotValidError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     get_department_or_404(db, user.department_id)
     db_user = models.User(
-        name=user.name,
+        account_name=user.account_name,
+        first_name=user.first_name,
+        middle_name=user.middle_name,
+        last_name=user.last_name,
+        name=user.name or build_full_name(user.first_name, user.last_name, user.middle_name),
         email=user.email,
         affiliation=user.affiliation,
         department_id=user.department_id,
@@ -357,7 +408,7 @@ def create_user(
 
 @app.get("/users/", response_model=List[schemas.User])
 def list_users(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    users = db.query(models.User).order_by(models.User.name.asc()).all()
+    users = db.query(models.User).order_by(models.User.account_name.asc()).all()
     return [redact_user_payload(user, current_user) for user in users]
 
 
@@ -392,6 +443,12 @@ def update_user(
     password = update_data.pop("password", None)
     if password:
         update_data["password_hash"] = get_password_hash(password)
+    if any(field in update_data for field in ["first_name", "last_name", "middle_name"]):
+        update_data.setdefault("name", build_full_name(
+            update_data.get("first_name", db_user.first_name),
+            update_data.get("last_name", db_user.last_name),
+            update_data.get("middle_name", db_user.middle_name),
+        ))
     ensure_user_field_access(current_user, db_user, "write", update_data.keys())
     try:
         for field, value in update_data.items():

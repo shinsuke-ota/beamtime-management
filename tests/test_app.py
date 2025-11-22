@@ -41,10 +41,15 @@ app.dependency_overrides[get_db] = override_get_db
 client = TestClient(app)
 
 
-def register_initial_approver():
+def register_initial_application_manager():
     response = client.post(
-        "/auth/approver-setup",
-        json={"name": "Initial Approver", "email": "approver@beamtime.org", "affiliation": "Lab"},
+        "/auth/application-manager-setup",
+        json={
+            "name": "Initial Application Manager",
+            "email": "manager@beamtime.org",
+            "affiliation": "Lab",
+            "password": "initpass",
+        },
     )
     assert response.status_code == 201
     data = response.json()
@@ -207,7 +212,12 @@ def test_list_users_returns_ordered_users():
     response = client.get("/users/", headers=auth_headers(approver_token))
     assert response.status_code == 200
     result = response.json()
-    assert [user["name"] for user in result] == ["Alice", "Bob", "Charlie", "Initial Approver"]
+    assert [user["name"] for user in result] == [
+        "Alice",
+        "Bob",
+        "Charlie",
+        "Initial Application Manager",
+    ]
     assert sorted(created_ids + [initial_id]) == sorted([user["id"] for user in result])
 
 

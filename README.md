@@ -88,6 +88,9 @@ application processes.
    ```
 3. Visit `http://localhost:5173` (default Vite port). The SPA proxies API
    calls to `VITE_API_URL`.
+   - CORS is preconfigured to allow the local Vite dev server
+     (`http://localhost:5173` and `http://127.0.0.1:5173`). Update
+     `app/main.py` if you need additional origins during development.
 4. Use the FastAPI docs at `http://localhost:8000/docs` for quick API
    exploration.
 

@@ -3,8 +3,9 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -56,6 +57,9 @@ def build_full_name(first_name: str, last_name: str, middle_name: str | None = N
     return " ".join(parts)
 
 app = FastAPI(title="Beamtime Management API")
+
+app.state.session_cookie = os.environ.get("SESSION_COOKIE_NAME", "session")
+app.state.session_ttl_minutes = int(os.environ.get("SESSION_TTL_MINUTES", "60"))
 
 # Allow overriding CORS origins via environment variable; default to common local Vite ports.
 _default_origins = {
@@ -345,22 +349,41 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
 
 @app.post("/auth/login", response_model=schemas.Token)
-def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
-    if not application_manager_exists(db):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Application requires initial Application Manager setup",
-        )
-    db_user = db.query(models.User).filter(models.User.email == payload.email).first()
+def login(payload: schemas.LoginRequest, response: Response, db: Session = Depends(get_db)):
+    filters = []
+    if payload.email:
+        filters.append(models.User.email == payload.email)
+    if payload.account_name:
+        filters.append(models.User.name == payload.account_name)
+    db_user = db.query(models.User).filter(or_(*filters)).first() if filters else None
     if not db_user or not verify_password(payload.password, db_user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail="Incorrect account name/email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
     access_token = create_access_token(
         data={"sub": str(db_user.id), "role": db_user.role.slug.value},
         expires_delta=timedelta(minutes=60),
+    )
+    session_ttl = timedelta(minutes=app.state.session_ttl_minutes)
+    session_token = create_access_token(
+        data={
+            "user": {
+                "id": db_user.id,
+                "name": db_user.name,
+                "email": db_user.email,
+                "role": db_user.role.value,
+            }
+        },
+        expires_delta=session_ttl,
+    )
+    response.set_cookie(
+        key=app.state.session_cookie,
+        value=session_token,
+        httponly=True,
+        samesite="lax",
+        max_age=int(session_ttl.total_seconds()),
     )
     return {"access_token": access_token, "token_type": "bearer"}
 

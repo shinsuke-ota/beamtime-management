@@ -23,11 +23,18 @@ ADMIN_ROLES = {"PI", "PROJECT_MANAGER", "ALLOCATOR", "APPROVER"}
 
 
 def upgrade() -> None:
-    op.add_column(
-        "users",
-        sa.Column("password_hash", sa.String(), nullable=False, server_default=""),
-    )
     connection = op.get_bind()
+    inspector = sa.inspect(connection)
+    existing_columns = {col["name"] for col in inspector.get_columns("users")}
+    added_column = False
+
+    if "password_hash" not in existing_columns:
+        op.add_column(
+            "users",
+            sa.Column("password_hash", sa.String(), nullable=False, server_default=""),
+        )
+        added_column = True
+
     admin_email = os.getenv("ADMIN_EMAIL")
     admin_password = os.getenv("ADMIN_PASSWORD")
     admin_name = os.getenv("ADMIN_NAME", "Admin User")
@@ -54,8 +61,14 @@ def upgrade() -> None:
             },
         )
 
-    op.alter_column("users", "password_hash", server_default=None)
+    if added_column:
+        op.alter_column("users", "password_hash", server_default=None)
 
 
 def downgrade() -> None:
-    op.drop_column("users", "password_hash")
+    connection = op.get_bind()
+    inspector = sa.inspect(connection)
+    existing_columns = {col["name"] for col in inspector.get_columns("users")}
+
+    if "password_hash" in existing_columns:
+        op.drop_column("users", "password_hash")

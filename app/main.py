@@ -9,10 +9,16 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from . import models, schemas
+from .authorization import (
+    AccessLevel,
+    ensure_level,
+    ensure_user_field_access,
+    redact_user_payload,
+)
 from .database import Base, engine
 from .dependencies import (
     create_access_token,
-    ensure_role,
+    ensure_access_level,
     get_current_user,
     get_db,
     get_password_hash,
@@ -69,7 +75,7 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
         db.add(db_user)
         db.commit()
         db.refresh(db_user)
-        return db_user
+        return redact_user_payload(db_user, db_user)
     except IntegrityError:
         db.rollback()
         raise HTTPException(
@@ -100,11 +106,7 @@ def create_user(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    if current_user.role != models.UserRole.APPROVER:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only approvers can create new users",
-        )
+    ensure_level(current_user, AccessLevel.APPROVER, "Only approvers can create new users")
     db_user = models.User(
         name=user.name,
         email=user.email,
@@ -116,7 +118,7 @@ def create_user(
         db.add(db_user)
         db.commit()
         db.refresh(db_user)
-        return db_user
+        return redact_user_payload(db_user, db_user)
     except IntegrityError:
         db.rollback()
         raise HTTPException(
@@ -127,7 +129,8 @@ def create_user(
 
 @app.get("/users/", response_model=List[schemas.User])
 def list_users(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    return db.query(models.User).order_by(models.User.name.asc()).all()
+    users = db.query(models.User).order_by(models.User.name.asc()).all()
+    return [redact_user_payload(user, current_user) for user in users]
 
 
 @app.get("/users/{user_id}", response_model=schemas.User)
@@ -137,7 +140,7 @@ def get_user(
     db_user = db.query(models.User).filter(models.User.id == user_id).first()
     if not db_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    return db_user
+    return redact_user_payload(db_user, current_user)
 
 
 @app.put("/users/{user_id}", response_model=schemas.User)
@@ -154,6 +157,7 @@ def update_user(
     password = update_data.pop("password", None)
     if password:
         update_data["password_hash"] = get_password_hash(password)
+    ensure_user_field_access(current_user, db_user, "write", update_data.keys())
     try:
         for field, value in update_data.items():
             setattr(db_user, field, value)
@@ -165,7 +169,7 @@ def update_user(
             detail="Email address already exists",
         )
     db.refresh(db_user)
-    return db_user
+    return redact_user_payload(db_user, current_user)
 
 
 @app.get("/users/{user_id}/projects", response_model=List[schemas.Project])
@@ -174,7 +178,7 @@ def list_projects_for_pi(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    ensure_role(db, user_id, models.UserRole.PI)
+    ensure_access_level(db, user_id, AccessLevel.PI)
     return db.query(models.ResearchProject).filter(models.ResearchProject.pi_id == user_id).all()
 
 
@@ -184,8 +188,9 @@ def create_project(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    ensure_role(db, project.manager_id, models.UserRole.PROJECT_MANAGER)
-    ensure_role(db, project.pi_id, models.UserRole.PI)
+    ensure_level(current_user, AccessLevel.PROJECT_MANAGER, "Only managers or higher can create projects")
+    ensure_access_level(db, project.manager_id, AccessLevel.PROJECT_MANAGER)
+    ensure_access_level(db, project.pi_id, AccessLevel.PI)
     db_project = models.ResearchProject(**project.dict())
     db.add(db_project)
     db.commit()
@@ -200,14 +205,15 @@ def update_project(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
+    ensure_level(current_user, AccessLevel.PROJECT_MANAGER, "Only managers or higher can update projects")
     db_project = db.query(models.ResearchProject).filter(models.ResearchProject.id == project_id).first()
     if not db_project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     update_data = payload.dict(exclude_unset=True)
     if "manager_id" in update_data:
-        ensure_role(db, update_data["manager_id"], models.UserRole.PROJECT_MANAGER)
+        ensure_access_level(db, update_data["manager_id"], AccessLevel.PROJECT_MANAGER)
     if "pi_id" in update_data:
-        ensure_role(db, update_data["pi_id"], models.UserRole.PI)
+        ensure_access_level(db, update_data["pi_id"], AccessLevel.PI)
     for field, value in update_data.items():
         setattr(db_project, field, value)
     db.commit()
@@ -219,6 +225,7 @@ def update_project(
 def delete_project(
     project_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)
 ):
+    ensure_level(current_user, AccessLevel.PROJECT_MANAGER, "Only managers or higher can delete projects")
     db_project = db.query(models.ResearchProject).filter(models.ResearchProject.id == project_id).first()
     if not db_project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
@@ -235,10 +242,11 @@ def create_request(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
+    ensure_level(current_user, AccessLevel.PI, "Only PIs or higher can create requests")
     project = db.query(models.ResearchProject).filter(models.ResearchProject.id == project_id).first()
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-    ensure_role(db, pi_id, models.UserRole.PI)
+    ensure_access_level(db, pi_id, AccessLevel.PI)
     if project.pi_id != pi_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="PI does not own project")
     db_request = models.BeamtimeRequest(project_id=project_id, **payload.dict())
@@ -252,6 +260,7 @@ def create_request(
 def list_requests(
     project_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)
 ):
+    ensure_level(current_user, AccessLevel.PI, "Only PIs or higher can list requests")
     project = db.query(models.ResearchProject).filter(models.ResearchProject.id == project_id).first()
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
@@ -262,7 +271,7 @@ def list_requests(
 def manager_requests(
     manager_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)
 ):
-    ensure_role(db, manager_id, models.UserRole.PROJECT_MANAGER)
+    ensure_access_level(db, manager_id, AccessLevel.PROJECT_MANAGER)
     project_ids = [p.id for p in db.query(models.ResearchProject).filter(models.ResearchProject.manager_id == manager_id)]
     if not project_ids:
         return []
@@ -277,7 +286,8 @@ def update_request_status(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    ensure_role(db, manager_id, models.UserRole.PROJECT_MANAGER)
+    ensure_level(current_user, AccessLevel.PROJECT_MANAGER, "Only managers or higher can update requests")
+    ensure_access_level(db, manager_id, AccessLevel.PROJECT_MANAGER)
     db_request = db.query(models.BeamtimeRequest).filter(models.BeamtimeRequest.id == request_id).first()
     if not db_request:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found")
@@ -298,7 +308,8 @@ def create_allocation(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    ensure_role(db, allocator_id, models.UserRole.ALLOCATOR)
+    ensure_level(current_user, AccessLevel.ALLOCATOR, "Only allocators or higher can create allocations")
+    ensure_access_level(db, allocator_id, AccessLevel.ALLOCATOR)
     request = db.query(models.BeamtimeRequest).filter(models.BeamtimeRequest.id == request_id).first()
     if not request:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found")
@@ -311,6 +322,7 @@ def create_allocation(
 
 @app.get("/allocations/", response_model=List[schemas.Allocation])
 def list_allocations(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    ensure_level(current_user, AccessLevel.PI, "Only PIs or higher can list allocations")
     return db.query(models.Allocation).all()
 
 
@@ -318,6 +330,7 @@ def list_allocations(db: Session = Depends(get_db), current_user: models.User = 
 def allocation_table(
     db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)
 ):
+    ensure_level(current_user, AccessLevel.PI, "Only PIs or higher can list allocations")
     allocations = (
         db.query(models.Allocation, models.ResearchProject)
         .join(models.BeamtimeRequest, models.BeamtimeRequest.id == models.Allocation.request_id)
@@ -345,7 +358,8 @@ def approve_allocation(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    ensure_role(db, payload.approver_id, models.UserRole.APPROVER)
+    ensure_level(current_user, AccessLevel.APPROVER, "Only approvers can approve allocations")
+    ensure_access_level(db, payload.approver_id, AccessLevel.APPROVER)
     allocation = db.query(models.Allocation).filter(models.Allocation.id == allocation_id).first()
     if not allocation:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Allocation not found")
@@ -362,6 +376,7 @@ def approve_allocation(
 def monthly_report(
     year: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)
 ):
+    ensure_level(current_user, AccessLevel.PROJECT_MANAGER, "Only managers or higher can view reports")
     report = defaultdict(lambda: {"requests": 0, "allocations": 0})
     start = datetime(year, 1, 1)
     end = datetime(year, 12, 31, 23, 59, 59)

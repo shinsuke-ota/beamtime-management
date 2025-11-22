@@ -1,16 +1,23 @@
 from datetime import date, datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
+from .authorization import AccessLevel
 from .models import AllocationStatus, RequestStatus, UserRole
 
 
 class UserBase(BaseModel):
-    name: str
-    email: EmailStr
-    affiliation: Optional[str] = None
-    role: UserRole
+    name: str = Field(..., json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER})
+    email: EmailStr = Field(
+        ..., json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
+    )
+    affiliation: Optional[str] = Field(
+        None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
+    )
+    role: UserRole = Field(
+        ..., json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
+    )
 
 
 class UserCreate(UserBase):
@@ -18,15 +25,39 @@ class UserCreate(UserBase):
 
 
 class UserUpdate(BaseModel):
-    name: Optional[str] = None
-    email: Optional[EmailStr] = None
-    affiliation: Optional[str] = None
-    role: Optional[UserRole] = None
-    password: Optional[str] = None
+    name: Optional[str] = Field(
+        None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
+    )
+    email: Optional[EmailStr] = Field(
+        None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
+    )
+    affiliation: Optional[str] = Field(
+        None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
+    )
+    role: Optional[UserRole] = Field(
+        None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
+    )
+    password: Optional[str] = Field(
+        None, json_schema_extra={"read_level": AccessLevel.SELF, "write_level": AccessLevel.SELF}
+    )
 
 
-class User(UserBase):
-    id: int
+class User(BaseModel):
+    id: int = Field(
+        ..., json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
+    )
+    name: Optional[str] = Field(
+        None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
+    )
+    email: Optional[EmailStr] = Field(
+        None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
+    )
+    affiliation: Optional[str] = Field(
+        None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
+    )
+    role: Optional[UserRole] = Field(
+        None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
+    )
 
     class Config:
         orm_mode = True

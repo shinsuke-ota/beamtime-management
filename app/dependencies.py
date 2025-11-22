@@ -7,8 +7,9 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
+from .authorization import AccessLevel, ensure_subject_meets_level
 from .database import SessionLocal
-from .models import User, UserRole
+from .models import User
 
 SECRET_KEY = os.getenv("SECRET_KEY", "change_this_secret")
 ALGORITHM = "HS256"
@@ -61,13 +62,14 @@ def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_
     return user
 
 
-def ensure_role(db: Session, user_id: int, role: UserRole) -> User:
+def get_user_by_id(db: Session, user_id: int) -> User:
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    if user.role != role:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"User must have role {role}",
-        )
+    return user
+
+
+def ensure_access_level(db: Session, user_id: int, required_level: AccessLevel) -> User:
+    user = get_user_by_id(db, user_id)
+    ensure_subject_meets_level(user, required_level)
     return user

@@ -66,6 +66,14 @@
       <template #item.affiliation="{ item }">
         <v-chip size="small" color="teal-lighten-3" variant="tonal">{{ item.affiliation }}</v-chip>
       </template>
+      <template #item.actions="{ item }">
+        <v-btn
+          icon="mdi-pencil"
+          variant="text"
+          color="primary"
+          @click.stop="openEditDialog(item.raw ?? item)"
+        />
+      </template>
       <template #loading>
         <v-skeleton-loader type="table-row@5" />
       </template>
@@ -127,12 +135,23 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <v-dialog v-model="showEditDialog" max-width="520">
+      <UserForm
+        v-if="selectedUserId"
+        :key="selectedUserId"
+        :user-id="selectedUserId"
+        @cancel="closeEditDialog"
+        @updated="handleUserUpdated"
+      />
+    </v-dialog>
   </v-card>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { get, post } from '../services/api';
+import UserForm from '../components/UserForm.vue';
 
 const emit = defineEmits(['refresh']);
 
@@ -143,10 +162,12 @@ const search = ref('');
 const roleFilter = ref(null);
 const affiliationFilter = ref(null);
 const showCreateDialog = ref(false);
+const showEditDialog = ref(false);
 const createLoading = ref(false);
 const createFormValid = ref(false);
 const creationError = ref('');
 const createForm = ref(null);
+const selectedUserId = ref(null);
 const newUser = ref({
   name: '',
   email: '',
@@ -159,7 +180,8 @@ const headers = [
   { title: 'Email', value: 'email' },
   { title: 'Role', value: 'role' },
   { title: 'Affiliation', value: 'affiliation' },
-  { title: 'Status', value: 'status' }
+  { title: 'Status', value: 'status' },
+  { title: 'Actions', value: 'actions', sortable: false, align: 'end' }
 ];
 
 const roleOptions = computed(() => {
@@ -220,6 +242,16 @@ const closeCreateDialog = () => {
   showCreateDialog.value = false;
 };
 
+const openEditDialog = user => {
+  selectedUserId.value = user.id;
+  showEditDialog.value = true;
+};
+
+const closeEditDialog = () => {
+  showEditDialog.value = false;
+  selectedUserId.value = null;
+};
+
 const requiredRule = value => !!value || 'This field is required';
 
 const submitNewUser = async () => {
@@ -239,6 +271,17 @@ const submitNewUser = async () => {
     createLoading.value = false;
   }
 };
+
+const handleUserUpdated = async () => {
+  await refreshDirectory();
+  closeEditDialog();
+};
+
+watch(showEditDialog, value => {
+  if (!value) {
+    selectedUserId.value = null;
+  }
+});
 
 onMounted(loadUsers);
 </script>

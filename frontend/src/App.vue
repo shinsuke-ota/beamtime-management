@@ -1,13 +1,14 @@
 <template>
   <v-app>
-    <v-app-bar app color="indigo-darken-3" prominent>
+    <v-app-bar v-if="showNavigation" app color="indigo-darken-3" prominent>
       <v-app-bar-nav-icon @click="drawer = !drawer" class="d-sm-none" />
       <v-toolbar-title>Beamtime Management</v-toolbar-title>
       <v-spacer />
       <v-btn icon="mdi-refresh" :loading="refreshing" @click="refresh" />
+      <v-btn icon="mdi-logout" @click="handleLogout" title="Logout" />
     </v-app-bar>
 
-    <v-navigation-drawer v-model="drawer" app :permanent="$vuetify.display.mdAndUp">
+    <v-navigation-drawer v-if="showNavigation" v-model="drawer" app :permanent="$vuetify.display.mdAndUp">
       <v-list density="compact">
         <v-list-item
           v-for="link in links"
@@ -40,13 +41,17 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, computed } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
+import { logout } from './services/api';
 
 const drawer = ref(false);
 const snackbar = ref(false);
 const refreshing = ref(false);
 const router = useRouter();
+const route = useRoute();
+
+const showNavigation = computed(() => route.name !== 'login');
 
 const links = [
   { title: 'Schedules', to: '/', icon: 'mdi-calendar-clock' },
@@ -60,5 +65,10 @@ const refresh = async () => {
   await router.push(router.currentRoute.value.fullPath);
   refreshing.value = false;
   snackbar.value = true;
+};
+
+const handleLogout = async () => {
+  await logout();
+  router.push('/login');
 };
 </script>

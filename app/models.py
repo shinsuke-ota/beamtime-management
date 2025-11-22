@@ -45,6 +45,9 @@ class Role(Base):
     id = Column(Integer, primary_key=True, index=True)
     slug = Column(Enum(UserRole), unique=True, nullable=False)
     display_name = Column(String, nullable=False)
+    access_level = Column(Integer, nullable=False)
+
+    users = relationship("User", back_populates="role")
 
 
 class Affiliation(Base):
@@ -80,10 +83,11 @@ class User(Base):
     email = Column(String, unique=True, nullable=False, index=True)
     affiliation = Column(String, nullable=True)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
-    role = Column(Enum(UserRole), nullable=False)
+    role_id = Column(Integer, ForeignKey("roles.id"), nullable=False)
     password_hash = Column(String, nullable=False)
 
     department = relationship("Department", back_populates="users")
+    role = relationship("Role", back_populates="users")
     projects = relationship("ResearchProject", back_populates="pi", foreign_keys="ResearchProject.pi_id")
     managed_projects = relationship(
         "ResearchProject", back_populates="manager", foreign_keys="ResearchProject.manager_id"

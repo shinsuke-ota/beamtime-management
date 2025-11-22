@@ -42,7 +42,14 @@ def get_or_create_role(db: Session, slug: models.UserRole) -> models.Role:
     role = db.query(models.Role).filter(models.Role.slug == slug).first()
     if role:
         return role
-    role = models.Role(slug=slug, display_name=slug.replace("_", " ").title())
+    # Determine access level based on role
+    from .authorization import ROLE_ACCESS_LEVELS
+    access_level = ROLE_ACCESS_LEVELS.get(slug, 1)
+    role = models.Role(
+        slug=slug,
+        display_name=slug.replace("_", " ").title(),
+        access_level=access_level
+    )
     db.add(role)
     db.commit()
     db.refresh(role)
@@ -58,10 +65,14 @@ def build_full_name(first_name: str, last_name: str, middle_name: str | None = N
 
 
 def application_manager_exists(db: Session) -> bool:
-    role = db.query(models.Role).filter(models.Role.slug == models.UserRole.APPLICATION_MANAGER).first()
+    role = db.query(models.Role).filter(
+        models.Role.slug == models.UserRole.APPLICATION_MANAGER
+    ).first()
     if not role:
         return False
-    return db.query(models.User).filter(models.User.role == role).first() is not None
+    return db.query(models.User).filter(
+        models.User.role_id == role.id
+    ).first() is not None
 
 app = FastAPI(title="Beamtime Management API")
 
@@ -260,6 +271,20 @@ def delete_department(
     return {"detail": "Department deleted"}
 
 
+@app.get(
+    "/auth/setup-status",
+    response_model=schemas.SetupStatusResponse,
+)
+def get_setup_status(db: Session = Depends(get_db)):
+    requires_setup = not application_manager_exists(db)
+    return schemas.SetupStatusResponse(
+        requires_setup=requires_setup,
+        message="Application Manager setup required"
+        if requires_setup
+        else "System is configured",
+    )
+
+
 @app.post(
     "/auth/application-manager-setup",
     response_model=schemas.ApplicationManagerSetupResponse,
@@ -279,7 +304,9 @@ def application_manager_setup(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
     try:
-        approver_role = get_or_create_role(db, models.UserRole.APPROVER)
+        app_manager_role = get_or_create_role(
+            db, models.UserRole.APPLICATION_MANAGER
+        )
         db_user = models.User(
             account_name=payload.account_name,
             first_name=payload.first_name,
@@ -289,17 +316,25 @@ def application_manager_setup(
             or build_full_name(payload.first_name, payload.last_name, payload.middle_name),
             email=payload.email,
             affiliation=payload.affiliation,
-            role=models.UserRole.APPLICATION_MANAGER,
+            role_id=app_manager_role.id,
             password_hash=get_password_hash(payload.password),
         )
         db.add(db_user)
         db.commit()
         db.refresh(db_user)
-    except IntegrityError:
+    except IntegrityError as e:
         db.rollback()
+        print(f"IntegrityError: {e}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="A user with that email already exists",
+            detail="A user with that email or account name already exists",
+        )
+    except Exception as e:
+        db.rollback()
+        print(f"Unexpected error during user creation: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create user: {str(e)}",
         )
 
     access_token = create_access_token(
@@ -320,7 +355,8 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
             detail="Register an Application Manager before self-service signup",
         )
     role = get_role_by_id(db, user.role_id)
-    if total_users > 0 and role.slug != models.UserRole.PI:
+    user_count = db.query(models.User).count()
+    if user_count > 0 and role.slug != models.UserRole.PI:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Self-service signup is allowed only for PIs",
@@ -340,7 +376,7 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
             email=user.email,
             affiliation=user.affiliation,
             department_id=user.department_id,
-            role=user.role,
+            role_id=user.role_id,
             password_hash=get_password_hash(user.password),
         )
         db.add(db_user)
@@ -357,13 +393,18 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
 @app.post("/auth/login", response_model=schemas.Token)
 def login(payload: schemas.LoginRequest, response: Response, db: Session = Depends(get_db)):
+    print(f"Login attempt: email={payload.email}, account_name={payload.account_name}")
     filters = []
     if payload.email:
         filters.append(models.User.email == payload.email)
     if payload.account_name:
         filters.append(models.User.name == payload.account_name)
     db_user = db.query(models.User).filter(or_(*filters)).first() if filters else None
+    print(f"User found: {db_user is not None}")
+    if db_user:
+        print(f"User: id={db_user.id}, email={db_user.email}, has_role={db_user.role is not None}")
     if not db_user or not verify_password(payload.password, db_user.password_hash):
+        print("Authentication failed")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect account name/email or password",
@@ -376,11 +417,12 @@ def login(payload: schemas.LoginRequest, response: Response, db: Session = Depen
     session_ttl = timedelta(minutes=app.state.session_ttl_minutes)
     session_token = create_access_token(
         data={
+            "sub": str(db_user.id),
             "user": {
                 "id": db_user.id,
                 "name": db_user.name,
                 "email": db_user.email,
-                "role": db_user.role.value,
+                "role": db_user.role.slug.value,
             }
         },
         expires_delta=session_ttl,
@@ -393,6 +435,13 @@ def login(payload: schemas.LoginRequest, response: Response, db: Session = Depen
         max_age=int(session_ttl.total_seconds()),
     )
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@app.get("/auth/me", response_model=schemas.PublicUser)
+def get_current_user_info(
+    current_user: models.User = Depends(get_current_user),
+):
+    return redact_user_payload(current_user, current_user)
 
 
 @app.post("/users/", response_model=schemas.PublicUser)
@@ -411,6 +460,8 @@ def create_user(
     except EmailNotValidError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     get_department_or_404(db, user.department_id)
+    # Validate role_id exists
+    get_role_by_id(db, user.role_id)
     db_user = models.User(
         account_name=user.account_name,
         first_name=user.first_name,
@@ -420,7 +471,7 @@ def create_user(
         email=user.email,
         affiliation=user.affiliation,
         department_id=user.department_id,
-        role=user.role,
+        role_id=user.role_id,
         password_hash=get_password_hash(user.password),
     )
     try:

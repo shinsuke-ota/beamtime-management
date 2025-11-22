@@ -207,13 +207,30 @@ class SetupStatusResponse(BaseModel):
 
 class LoginRequest(BaseModel):
     account_name: Optional[str] = None
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None
     password: str
+
+    @root_validator(pre=True)
+    def normalize_fields(cls, values):
+        # Convert empty strings to None
+        if values.get("account_name") == "":
+            values["account_name"] = None
+        if values.get("email") == "":
+            values["email"] = None
+        return values
 
     @root_validator
     def ensure_identifier(cls, values):
         if not values.get("account_name") and not values.get("email"):
             raise ValueError("Either account name or email must be provided")
+        # Validate email format if provided
+        email = values.get("email")
+        if email:
+            try:
+                from email_validator import validate_email as validate_email_func
+                validate_email_func(email)
+            except Exception:
+                raise ValueError("Invalid email format")
         return values
 
 

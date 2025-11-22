@@ -56,6 +56,10 @@ REDACTED_VALUE = "REDACTED"
 def get_role_level(role: Role | None) -> AccessLevel:
     if not role:
         return AccessLevel.SELF
+    # If role has access_level attribute, use it directly
+    if hasattr(role, "access_level") and role.access_level is not None:
+        return AccessLevel(role.access_level)
+    # Fallback to slug-based lookup
     slug = role.slug if hasattr(role, "slug") else role
     return ROLE_ACCESS_LEVELS.get(slug, AccessLevel.SELF)
 
@@ -108,7 +112,7 @@ def redact_user_payload(target: User, actor: User) -> dict:
         "email": target.email,
         "affiliation": target.affiliation,
         "department_id": target.department_id,
-        "role": target.role,
+        "role": target.role.slug if target.role else None,
     }
     # For fields included in the payload, still honor access levels.
     for field, requirement in USER_FIELD_ACCESS.items():

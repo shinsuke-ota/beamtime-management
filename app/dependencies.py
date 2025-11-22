@@ -5,7 +5,7 @@ import json
 import os
 from datetime import datetime, timedelta
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Cookie, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
@@ -17,7 +17,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", "change_this_secret")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
 
 def _b64encode(data: bytes) -> str:
@@ -79,23 +79,36 @@ def _decode_access_token(token: str) -> dict:
     return payload
 
 
-def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)) -> User:
+def get_current_user(
+    db: Session = Depends(get_db),
+    session: str | None = Cookie(default=None)
+) -> User:
+    print(f"get_current_user called, session cookie: {session}")
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    
+    if not session:
+        print("No session cookie found")
+        raise credentials_exception
+    
     try:
-        payload = _decode_access_token(token)
+        payload = _decode_access_token(session)
         user_id = payload.get("sub")
+        print(f"Token decoded, user_id: {user_id}")
         if user_id is None:
             raise credentials_exception
         user_id = int(user_id)
-    except HTTPException:
+    except HTTPException as e:
+        print(f"Token decode failed: {e}")
         raise credentials_exception
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
+        print("User not found in database")
         raise credentials_exception
+    print(f"User authenticated: {user.email}")
     return user
 
 

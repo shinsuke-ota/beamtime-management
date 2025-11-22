@@ -18,5 +18,6 @@ client.interceptors.response.use(
 
 export const get = (url, config = {}) => client.get(url, config);
 export const post = (url, payload, config = {}) => client.post(url, payload, config);
+export const put = (url, payload, config = {}) => client.put(url, payload, config);
 export const patch = (url, payload, config = {}) => client.patch(url, payload, config);
 export const del = (url, config = {}) => client.delete(url, config);

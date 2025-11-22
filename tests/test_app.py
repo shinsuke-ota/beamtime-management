@@ -4,6 +4,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+import sys
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+
 from app.database import Base
 from app.dependencies import get_db
 from app.main import app
@@ -17,6 +22,11 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_
 
 Base.metadata.drop_all(bind=test_engine)
 Base.metadata.create_all(bind=test_engine)
+
+
+def reset_database():
+    Base.metadata.drop_all(bind=test_engine)
+    Base.metadata.create_all(bind=test_engine)
 
 
 def override_get_db():
@@ -38,6 +48,7 @@ def create_user(payload):
 
 
 def test_full_workflow():
+    reset_database()
     pi_id = create_user({
         "name": "Dr. PI",
         "email": "pi@example.com",
@@ -126,3 +137,56 @@ def test_full_workflow():
     table_resp = client.get("/allocations/table")
     assert table_resp.status_code == 200
     assert table_resp.json()[0]["project_title"] == "Project A"
+
+
+def test_list_users_returns_ordered_users():
+    reset_database()
+    users = [
+        {
+            "name": "Charlie",
+            "email": "charlie@example.com",
+            "affiliation": "Lab",
+            "role": "PI",
+        },
+        {
+            "name": "Alice",
+            "email": "alice@example.com",
+            "affiliation": "Lab",
+            "role": "APPROVER",
+        },
+        {
+            "name": "Bob",
+            "email": "bob@example.com",
+            "affiliation": "Lab",
+            "role": "ALLOCATOR",
+        },
+    ]
+    created_ids = [create_user(payload) for payload in users]
+
+    response = client.get("/users/")
+    assert response.status_code == 200
+    result = response.json()
+    assert [user["name"] for user in result] == ["Alice", "Bob", "Charlie"]
+    assert sorted(created_ids) == sorted([user["id"] for user in result])
+
+
+def test_get_user_by_id():
+    reset_database()
+    user_id = create_user(
+        {
+            "name": "Eve",
+            "email": "eve@example.com",
+            "affiliation": "Lab",
+            "role": "PROJECT_MANAGER",
+        }
+    )
+
+    response = client.get(f"/users/{user_id}")
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": user_id,
+        "name": "Eve",
+        "email": "eve@example.com",
+        "affiliation": "Lab",
+        "role": "PROJECT_MANAGER",
+    }

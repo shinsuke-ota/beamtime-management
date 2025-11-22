@@ -1,8 +1,10 @@
+import os
 from collections import defaultdict
 from datetime import datetime
 from typing import List
 
 from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 from . import models, schemas
@@ -13,6 +15,27 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Beamtime Management API")
 
+# Allow overriding CORS origins via environment variable; default to common local Vite ports.
+_default_origins = {
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
+}
+allowed_origins = os.environ.get("ALLOWED_ORIGINS")
+if allowed_origins:
+    origins = [origin.strip() for origin in allowed_origins.split(",") if origin.strip()]
+else:
+    origins = sorted(_default_origins)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.post("/users/", response_model=schemas.User)
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
@@ -20,6 +43,19 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
+    return db_user
+
+
+@app.get("/users/", response_model=List[schemas.User])
+def list_users(db: Session = Depends(get_db)):
+    return db.query(models.User).order_by(models.User.name.asc()).all()
+
+
+@app.get("/users/{user_id}", response_model=schemas.User)
+def get_user(user_id: int, db: Session = Depends(get_db)):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return db_user
 
 

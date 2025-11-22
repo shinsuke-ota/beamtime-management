@@ -8,6 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from email_validator import EmailNotValidError, validate_email
+
 from . import models, schemas
 from .authorization import (
     AccessLevel,
@@ -51,19 +53,67 @@ app.add_middleware(
 )
 
 
+@app.post(
+    "/auth/approver-setup",
+    response_model=schemas.ApproverSetupResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def approver_setup(payload: schemas.ApproverSetupRequest, db: Session = Depends(get_db)):
+    if db.query(models.User).count() > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An approver is already registered",
+        )
+    try:
+        validate_email(payload.email)
+    except EmailNotValidError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    try:
+        db_user = models.User(
+            name=payload.name,
+            email=payload.email,
+            affiliation=payload.affiliation,
+            role=models.UserRole.APPROVER,
+            password_hash=get_password_hash(payload.email),
+        )
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A user with that email already exists",
+        )
+
+    access_token = create_access_token(
+        data={"sub": str(db_user.id), "role": db_user.role.value},
+        expires_delta=timedelta(minutes=60),
+    )
+    return schemas.ApproverSetupResponse(
+        user=redact_user_payload(db_user, db_user),
+        token=schemas.Token(access_token=access_token),
+    )
+
+
 @app.post("/auth/signup", response_model=schemas.User, status_code=status.HTTP_201_CREATED)
 def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
     total_users = db.query(models.User).count()
-    if total_users == 0 and user.role != models.UserRole.APPROVER:
+    if total_users == 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="The first registered user must be an approver",
+            detail="Use approver setup to register the first user",
         )
     if total_users > 0 and user.role != models.UserRole.PI:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Self-service signup is allowed only for PIs",
         )
+    try:
+        validate_email(user.email)
+    except EmailNotValidError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     try:
         db_user = models.User(
             name=user.name,
@@ -107,6 +157,10 @@ def create_user(
     current_user: models.User = Depends(get_current_user),
 ):
     ensure_level(current_user, AccessLevel.APPROVER, "Only approvers can create new users")
+    try:
+        validate_email(user.email)
+    except EmailNotValidError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     db_user = models.User(
         name=user.name,
         email=user.email,
@@ -118,7 +172,7 @@ def create_user(
         db.add(db_user)
         db.commit()
         db.refresh(db_user)
-        return redact_user_payload(db_user, db_user)
+        return redact_user_payload(db_user, current_user)
     except IntegrityError:
         db.rollback()
         raise HTTPException(
@@ -154,6 +208,11 @@ def update_user(
     if not db_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     update_data = payload.dict(exclude_unset=True)
+    if "email" in update_data:
+        try:
+            validate_email(update_data["email"])
+        except EmailNotValidError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     password = update_data.pop("password", None)
     if password:
         update_data["password_hash"] = get_password_hash(password)

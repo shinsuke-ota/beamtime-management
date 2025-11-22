@@ -56,7 +56,8 @@ REDACTED_VALUE = "REDACTED"
 def get_role_level(role: Role | None) -> AccessLevel:
     if not role:
         return AccessLevel.SELF
-    return ROLE_ACCESS_LEVELS.get(role.slug, AccessLevel.SELF)
+    slug = role.slug if hasattr(role, "slug") else role
+    return ROLE_ACCESS_LEVELS.get(slug, AccessLevel.SELF)
 
 
 def get_user_level(actor: User, target: User | None = None) -> AccessLevel:
@@ -103,16 +104,13 @@ def redact_user_payload(target: User, actor: User) -> dict:
     level = get_user_level(actor, target)
     payload = {
         "id": target.id,
-        "account_name": target.account_name,
-        "first_name": target.first_name,
-        "middle_name": target.middle_name,
-        "last_name": target.last_name,
         "name": target.name,
         "email": target.email,
         "affiliation": target.affiliation,
         "department_id": target.department_id,
         "role": target.role,
     }
+    # For fields included in the payload, still honor access levels.
     for field, requirement in USER_FIELD_ACCESS.items():
         if field not in payload:
             continue

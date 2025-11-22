@@ -46,16 +46,12 @@ class Role(Base):
     slug = Column(Enum(UserRole), unique=True, nullable=False)
     display_name = Column(String, nullable=False)
 
-    users = relationship("User", back_populates="role")
-
 
 class Affiliation(Base):
     __tablename__ = "affiliations"
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
-
-    users = relationship("User", back_populates="affiliation")
 
 
 class User(Base):

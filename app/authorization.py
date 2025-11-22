@@ -9,6 +9,7 @@ from .models import User, UserRole
 
 class AccessLevel(IntEnum):
     SELF = 1
+    APPLICATION_MANAGER = 6
     PI = 2
     PROJECT_MANAGER = 3
     ALLOCATOR = 4
@@ -16,6 +17,7 @@ class AccessLevel(IntEnum):
 
 
 ROLE_ACCESS_LEVELS: dict[UserRole, AccessLevel] = {
+    UserRole.APPLICATION_MANAGER: AccessLevel.APPLICATION_MANAGER,
     UserRole.PI: AccessLevel.PI,
     UserRole.PROJECT_MANAGER: AccessLevel.PROJECT_MANAGER,
     UserRole.ALLOCATOR: AccessLevel.ALLOCATOR,

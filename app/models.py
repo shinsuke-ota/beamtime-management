@@ -38,25 +38,54 @@ class AllocationStatus(str, enum.Enum):
     COMPLETED = "COMPLETED"
 
 
+class Role(Base):
+    __tablename__ = "roles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    slug = Column(Enum(UserRole), unique=True, nullable=False)
+    display_name = Column(String, nullable=False)
+
+    users = relationship("User", back_populates="role")
+
+
+class Affiliation(Base):
+    __tablename__ = "affiliations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, nullable=False)
+
+    users = relationship("User", back_populates="affiliation")
+
+
 class User(Base):
     __tablename__ = "users"
 
     access_metadata = {
         "id": {"read_level": 3, "write_level": 3},
+        "account_name": {"read_level": 3, "write_level": 3},
+        "first_name": {"read_level": 3, "write_level": 3},
+        "middle_name": {"read_level": 3, "write_level": 3},
+        "last_name": {"read_level": 3, "write_level": 3},
         "name": {"read_level": 3, "write_level": 3},
         "email": {"read_level": 3, "write_level": 3},
-        "affiliation": {"read_level": 3, "write_level": 3},
-        "role": {"read_level": 3, "write_level": 3},
+        "affiliation_id": {"read_level": 3, "write_level": 3},
+        "role_id": {"read_level": 3, "write_level": 3},
         "password_hash": {"read_level": 1, "write_level": 1},
     }
 
     id = Column(Integer, primary_key=True, index=True)
+    account_name = Column(String, unique=True, nullable=False, index=True)
+    first_name = Column(String, nullable=False)
+    middle_name = Column(String, nullable=True)
+    last_name = Column(String, nullable=False)
     name = Column(String, nullable=False)
     email = Column(String, unique=True, nullable=False, index=True)
-    affiliation = Column(String, nullable=True)
-    role = Column(Enum(UserRole), nullable=False)
+    affiliation_id = Column(Integer, ForeignKey("affiliations.id"), nullable=True)
+    role_id = Column(Integer, ForeignKey("roles.id"), nullable=False)
     password_hash = Column(String, nullable=False)
 
+    affiliation = relationship("Affiliation", back_populates="users")
+    role = relationship("Role", back_populates="users")
     projects = relationship("ResearchProject", back_populates="pi", foreign_keys="ResearchProject.pi_id")
     managed_projects = relationship(
         "ResearchProject", back_populates="manager", foreign_keys="ResearchProject.manager_id"

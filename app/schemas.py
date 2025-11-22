@@ -4,21 +4,37 @@ from typing import List, Optional
 from pydantic import BaseModel, EmailStr, Field
 
 from .authorization import AccessLevel
-from .models import AllocationStatus, RequestStatus, UserRole
+from .models import AllocationStatus, RequestStatus
 
 
 class UserBase(BaseModel):
-    name: str = Field(
+    account_name: str = Field(
+        ...,
+        pattern=r"^[a-z][a-z0-9_-]{2,31}$",
+        json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER},
+    )
+    first_name: str = Field(
         ..., json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
+    )
+    middle_name: Optional[str] = Field(
+        None,
+        json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER},
+    )
+    last_name: str = Field(
+        ..., json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
+    )
+    name: Optional[str] = Field(
+        None,
+        json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER},
     )
     email: EmailStr = Field(
         ..., json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
-    affiliation: Optional[str] = Field(
+    affiliation_id: Optional[int] = Field(
         None,
         json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER},
     )
-    role: UserRole = Field(
+    role_id: int = Field(
         ..., json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
 
@@ -28,16 +44,30 @@ class UserCreate(UserBase):
 
 
 class UserUpdate(BaseModel):
+    account_name: Optional[str] = Field(
+        None,
+        pattern=r"^[a-z][a-z0-9_-]{2,31}$",
+        json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER},
+    )
+    first_name: Optional[str] = Field(
+        None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
+    )
+    middle_name: Optional[str] = Field(
+        None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
+    )
+    last_name: Optional[str] = Field(
+        None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
+    )
     name: Optional[str] = Field(
         None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
     email: Optional[EmailStr] = Field(
         None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
-    affiliation: Optional[str] = Field(
+    affiliation_id: Optional[int] = Field(
         None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
-    role: Optional[UserRole] = Field(
+    role_id: Optional[int] = Field(
         None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
     password: Optional[str] = Field(
@@ -49,16 +79,28 @@ class User(BaseModel):
     id: int = Field(
         ..., json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
+    account_name: str = Field(
+        ..., json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
+    )
+    first_name: str = Field(
+        ..., json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
+    )
+    middle_name: Optional[str] = Field(
+        None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
+    )
+    last_name: str = Field(
+        ..., json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
+    )
     name: Optional[str] = Field(
         None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
     email: Optional[EmailStr] = Field(
         None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
-    affiliation: Optional[str] = Field(
+    affiliation_id: Optional[int] = Field(
         None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
-    role: Optional[UserRole] = Field(
+    role_id: Optional[int] = Field(
         None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
 
@@ -71,11 +113,14 @@ class Token(BaseModel):
     token_type: str = "bearer"
 
 
-class ApplicationManagerSetupRequest(BaseModel):
-    name: str
+class ApproverSetupRequest(BaseModel):
+    account_name: str = Field(..., pattern=r"^[a-z][a-z0-9_-]{2,31}$")
+    first_name: str
+    middle_name: Optional[str] = None
+    last_name: str
+    name: Optional[str] = None
     email: EmailStr
-    affiliation: Optional[str] = None
-    password: str
+    affiliation_id: Optional[int] = None
 
 
 class ApplicationManagerSetupResponse(BaseModel):

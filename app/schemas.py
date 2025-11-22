@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, root_validator
 
 from .authorization import AccessLevel
 from .models import AllocationStatus, RequestStatus, UserRole
@@ -83,8 +83,15 @@ class ApproverSetupResponse(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    account_name: Optional[str] = None
+    email: Optional[EmailStr] = None
     password: str
+
+    @root_validator
+    def ensure_identifier(cls, values):
+        if not values.get("account_name") and not values.get("email"):
+            raise ValueError("Either account name or email must be provided")
+        return values
 
 
 class ProjectBase(BaseModel):

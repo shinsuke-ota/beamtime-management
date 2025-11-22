@@ -126,7 +126,7 @@ def create_institution(
     current_user: models.User = Depends(get_current_user),
 ):
     ensure_level(
-        current_user, AccessLevel.APPROVER, "Only approvers can create institutions"
+        current_user, AccessLevel.ALLOCATOR, "Only allocators or higher can create institutions"
     )
     institution = models.Institution(name=payload.name)
     try:
@@ -160,7 +160,7 @@ def update_institution(
     current_user: models.User = Depends(get_current_user),
 ):
     ensure_level(
-        current_user, AccessLevel.APPROVER, "Only approvers can update institutions"
+        current_user, AccessLevel.ALLOCATOR, "Only allocators or higher can update institutions"
     )
     institution = get_institution_or_404(db, institution_id)
     institution.name = payload.name
@@ -183,7 +183,7 @@ def delete_institution(
     current_user: models.User = Depends(get_current_user),
 ):
     ensure_level(
-        current_user, AccessLevel.APPROVER, "Only approvers can delete institutions"
+        current_user, AccessLevel.ALLOCATOR, "Only allocators or higher can delete institutions"
     )
     institution = get_institution_or_404(db, institution_id)
     db.delete(institution)
@@ -201,7 +201,7 @@ def create_department(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    ensure_level(current_user, AccessLevel.APPROVER, "Only approvers can create departments")
+    ensure_level(current_user, AccessLevel.ALLOCATOR, "Only allocators or higher can create departments")
     get_institution_or_404(db, payload.institution_id)
     department = models.Department(**payload.dict())
     try:
@@ -239,7 +239,7 @@ def update_department(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    ensure_level(current_user, AccessLevel.APPROVER, "Only approvers can update departments")
+    ensure_level(current_user, AccessLevel.ALLOCATOR, "Only allocators or higher can update departments")
     department = get_department_or_404(db, department_id)
     update_data = payload.dict(exclude_unset=True)
     if "institution_id" in update_data:
@@ -264,7 +264,7 @@ def delete_department(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    ensure_level(current_user, AccessLevel.APPROVER, "Only approvers can delete departments")
+    ensure_level(current_user, AccessLevel.ALLOCATOR, "Only allocators or higher can delete departments")
     department = get_department_or_404(db, department_id)
     db.delete(department)
     db.commit()

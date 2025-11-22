@@ -50,3 +50,18 @@ export const setupApplicationManager = async (data) => {
   const response = await post('/auth/application-manager-setup', data);
   return response.data;
 };
+
+// Institution API
+export const getInstitutions = () => get('/institutions/');
+export const createInstitution = (data) => post('/institutions/', data);
+export const updateInstitution = (id, data) => put(`/institutions/${id}`, data);
+export const deleteInstitution = (id) => del(`/institutions/${id}`);
+
+// Department API
+export const getDepartments = (institutionId = null) => {
+  const params = institutionId ? { institution_id: institutionId } : {};
+  return get('/departments/', { params });
+};
+export const createDepartment = (data) => post('/departments/', data);
+export const updateDepartment = (id, data) => put(`/departments/${id}`, data);
+export const deleteDepartment = (id) => del(`/departments/${id}`);

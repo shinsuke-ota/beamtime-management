@@ -5,6 +5,7 @@ import UserDirectory from '../views/UserDirectory.vue';
 import ApproverSetup from '../views/ApproverSetup.vue';
 import Login from '../views/Login.vue';
 import ApplicationManagerSetup from '../views/ApplicationManagerSetup.vue';
+import InstitutionManagement from '../views/InstitutionManagement.vue';
 import { getCurrentUser, getSetupStatus } from '../services/api';
 
 const routes = [
@@ -13,7 +14,8 @@ const routes = [
   { path: '/', name: 'schedules', component: BeamtimeSchedules, meta: { requiresAuth: true } },
   { path: '/management', name: 'management', component: ManagementDashboard, meta: { requiresAuth: true } },
   { path: '/users', name: 'users', component: UserDirectory, meta: { requiresAuth: true } },
-  { path: '/approver-setup', name: 'approver-setup', component: ApproverSetup, meta: { requiresAuth: true } }
+  { path: '/approver-setup', name: 'approver-setup', component: ApproverSetup, meta: { requiresAuth: true } },
+  { path: '/institutions', name: 'institutions', component: InstitutionManagement, meta: { requiresAuth: true } }
 ];
 
 const router = createRouter({

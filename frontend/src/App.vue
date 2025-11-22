@@ -1,7 +1,7 @@
 <template>
   <v-app>
     <v-app-bar v-if="showNavigation" app color="indigo-darken-3" prominent>
-      <v-app-bar-nav-icon @click="drawer = !drawer" class="d-sm-none" />
+      <v-app-bar-nav-icon @click="drawer = !drawer" class="d-md-none" />
       <v-toolbar-title>Beamtime Management</v-toolbar-title>
       <v-spacer />
       <v-btn icon="mdi-refresh" :loading="refreshing" @click="refresh" />
@@ -15,7 +15,7 @@
           :key="link.to"
           :to="link.to"
           router
-          @click="drawer = $vuetify.display.mdAndUp"
+          @click="onNavItemClick"
         >
           <template #prepend>
             <v-icon :icon="link.icon" />
@@ -45,18 +45,26 @@ import { ref, computed } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { logout } from './services/api';
 
-const drawer = ref(false);
+const drawer = ref(true);
 const snackbar = ref(false);
 const refreshing = ref(false);
 const router = useRouter();
 const route = useRoute();
 
-const showNavigation = computed(() => route.name !== 'login');
+const showNavigation = computed(() => route.name !== 'login' && route.name !== 'setup');
+
+const onNavItemClick = () => {
+  // モバイル画面でのみドロワーを閉じる
+  if (!window.matchMedia('(min-width: 960px)').matches) {
+    drawer.value = false;
+  }
+};
 
 const links = [
   { title: 'Schedules', to: '/', icon: 'mdi-calendar-clock' },
   { title: 'Management', to: '/management', icon: 'mdi-clipboard-list-outline' },
   { title: 'Users', to: '/users', icon: 'mdi-account-group' },
+  { title: 'Institutions', to: '/institutions', icon: 'mdi-domain' },
   { title: 'Approver Setup', to: '/approver-setup', icon: 'mdi-shield-account' }
 ];
 

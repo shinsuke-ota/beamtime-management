@@ -1,7 +1,7 @@
 import os
 from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import List
+from typing import List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -51,6 +51,176 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def get_institution_or_404(db: Session, institution_id: int) -> models.Institution:
+    institution = db.query(models.Institution).filter(models.Institution.id == institution_id).first()
+    if not institution:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Institution not found")
+    return institution
+
+
+def get_department_or_404(db: Session, department_id: int) -> models.Department:
+    department = db.query(models.Department).filter(models.Department.id == department_id).first()
+    if not department:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
+    return department
+
+
+@app.post(
+    "/institutions/",
+    response_model=schemas.Institution,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_institution(
+    payload: schemas.InstitutionCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    ensure_level(
+        current_user, AccessLevel.APPROVER, "Only approvers can create institutions"
+    )
+    institution = models.Institution(name=payload.name)
+    try:
+        db.add(institution)
+        db.commit()
+        db.refresh(institution)
+        return institution
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An institution with that name already exists",
+        )
+
+
+@app.get("/institutions/", response_model=List[schemas.Institution])
+def list_institutions(db: Session = Depends(get_db)):
+    return db.query(models.Institution).order_by(models.Institution.name.asc()).all()
+
+
+@app.get("/institutions/{institution_id}", response_model=schemas.Institution)
+def get_institution(institution_id: int, db: Session = Depends(get_db)):
+    return get_institution_or_404(db, institution_id)
+
+
+@app.put("/institutions/{institution_id}", response_model=schemas.Institution)
+def update_institution(
+    institution_id: int,
+    payload: schemas.InstitutionCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    ensure_level(
+        current_user, AccessLevel.APPROVER, "Only approvers can update institutions"
+    )
+    institution = get_institution_or_404(db, institution_id)
+    institution.name = payload.name
+    try:
+        db.commit()
+        db.refresh(institution)
+        return institution
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An institution with that name already exists",
+        )
+
+
+@app.delete("/institutions/{institution_id}")
+def delete_institution(
+    institution_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    ensure_level(
+        current_user, AccessLevel.APPROVER, "Only approvers can delete institutions"
+    )
+    institution = get_institution_or_404(db, institution_id)
+    db.delete(institution)
+    db.commit()
+    return {"detail": "Institution deleted"}
+
+
+@app.post(
+    "/departments/",
+    response_model=schemas.Department,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_department(
+    payload: schemas.DepartmentCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    ensure_level(current_user, AccessLevel.APPROVER, "Only approvers can create departments")
+    get_institution_or_404(db, payload.institution_id)
+    department = models.Department(**payload.dict())
+    try:
+        db.add(department)
+        db.commit()
+        db.refresh(department)
+        return department
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A department with that name already exists for this institution",
+        )
+
+
+@app.get("/departments/", response_model=List[schemas.Department])
+def list_departments(
+    institution_id: Optional[int] = None, db: Session = Depends(get_db)
+):
+    query = db.query(models.Department)
+    if institution_id is not None:
+        query = query.filter(models.Department.institution_id == institution_id)
+    return query.order_by(models.Department.name.asc()).all()
+
+
+@app.get("/departments/{department_id}", response_model=schemas.Department)
+def get_department(department_id: int, db: Session = Depends(get_db)):
+    return get_department_or_404(db, department_id)
+
+
+@app.put("/departments/{department_id}", response_model=schemas.Department)
+def update_department(
+    department_id: int,
+    payload: schemas.DepartmentUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    ensure_level(current_user, AccessLevel.APPROVER, "Only approvers can update departments")
+    department = get_department_or_404(db, department_id)
+    update_data = payload.dict(exclude_unset=True)
+    if "institution_id" in update_data:
+        get_institution_or_404(db, update_data["institution_id"])
+    for field, value in update_data.items():
+        setattr(department, field, value)
+    try:
+        db.commit()
+        db.refresh(department)
+        return department
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A department with that name already exists for this institution",
+        )
+
+
+@app.delete("/departments/{department_id}")
+def delete_department(
+    department_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    ensure_level(current_user, AccessLevel.APPROVER, "Only approvers can delete departments")
+    department = get_department_or_404(db, department_id)
+    db.delete(department)
+    db.commit()
+    return {"detail": "Department deleted"}
 
 
 @app.post(
@@ -114,11 +284,13 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
         validate_email(user.email)
     except EmailNotValidError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    get_department_or_404(db, user.department_id)
     try:
         db_user = models.User(
             name=user.name,
             email=user.email,
             affiliation=user.affiliation,
+            department_id=user.department_id,
             role=user.role,
             password_hash=get_password_hash(user.password),
         )
@@ -161,10 +333,12 @@ def create_user(
         validate_email(user.email)
     except EmailNotValidError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    get_department_or_404(db, user.department_id)
     db_user = models.User(
         name=user.name,
         email=user.email,
         affiliation=user.affiliation,
+        department_id=user.department_id,
         role=user.role,
         password_hash=get_password_hash(user.password),
     )
@@ -213,6 +387,8 @@ def update_user(
             validate_email(update_data["email"])
         except EmailNotValidError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    if "department_id" in update_data and update_data["department_id"] is not None:
+        get_department_or_404(db, update_data["department_id"])
     password = update_data.pop("password", None)
     if password:
         update_data["password_hash"] = get_password_hash(password)

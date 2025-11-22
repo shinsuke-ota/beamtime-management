@@ -37,6 +37,9 @@ USER_FIELD_ACCESS: dict[str, FieldAccess] = {
     "affiliation": FieldAccess(
         read=AccessLevel.PROJECT_MANAGER, write=AccessLevel.PROJECT_MANAGER
     ),
+    "department_id": FieldAccess(
+        read=AccessLevel.PROJECT_MANAGER, write=AccessLevel.PROJECT_MANAGER
+    ),
     "role": FieldAccess(read=AccessLevel.PROJECT_MANAGER, write=AccessLevel.PROJECT_MANAGER),
     "password_hash": FieldAccess(read=AccessLevel.SELF, write=AccessLevel.SELF),
 }
@@ -95,6 +98,7 @@ def redact_user_payload(target: User, actor: User) -> dict:
         "name": target.name,
         "email": target.email,
         "affiliation": target.affiliation,
+        "department_id": target.department_id,
         "role": target.role,
     }
     for field, requirement in USER_FIELD_ACCESS.items():

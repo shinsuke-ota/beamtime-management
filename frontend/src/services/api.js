@@ -30,8 +30,7 @@ export const login = async (credentials) => {
 };
 
 export const getCurrentUser = async () => {
-  const response = await get('/auth/me');
-  return response.data;
+  return await get('/auth/me');
 };
 
 export const logout = () => {

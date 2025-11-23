@@ -41,9 +41,6 @@ USER_FIELD_ACCESS: dict[str, FieldAccess] = {
     "last_name": FieldAccess(read=AccessLevel.SELF, write=AccessLevel.PROJECT_MANAGER),
     "name": FieldAccess(read=AccessLevel.SELF, write=AccessLevel.PROJECT_MANAGER),
     "email": FieldAccess(read=AccessLevel.SELF, write=AccessLevel.PROJECT_MANAGER),
-    "affiliation": FieldAccess(
-        read=AccessLevel.SELF, write=AccessLevel.PROJECT_MANAGER
-    ),
     "department_id": FieldAccess(
         read=AccessLevel.SELF, write=AccessLevel.PROJECT_MANAGER
     ),
@@ -116,7 +113,6 @@ def redact_user_payload(target: User, actor: User) -> dict:
         "last_name": target.last_name,
         "name": target.name,
         "email": target.email,
-        "affiliation": target.affiliation,
         "department_id": target.department_id,
         "role": target.role.slug if target.role else None,
         "role_id": target.role_id if target.role else None,
@@ -126,5 +122,5 @@ def redact_user_payload(target: User, actor: User) -> dict:
         if field not in payload:
             continue
         if level < requirement.read:
-            payload[field] = REDACTED_VALUE if field not in {"role_id", "affiliation_id"} else None
+            payload[field] = REDACTED_VALUE if field not in {"role_id"} else None
     return payload

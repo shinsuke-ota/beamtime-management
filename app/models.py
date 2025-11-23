@@ -68,7 +68,6 @@ class User(Base):
         "last_name": {"read_level": 3, "write_level": 3},
         "name": {"read_level": 3, "write_level": 3},
         "email": {"read_level": 3, "write_level": 3},
-        "affiliation": {"read_level": 3, "write_level": 3},
         "department_id": {"read_level": 3, "write_level": 3},
         "role": {"read_level": 3, "write_level": 3},
         "password_hash": {"read_level": 1, "write_level": 1},
@@ -81,7 +80,6 @@ class User(Base):
     last_name = Column(String, nullable=False)
     name = Column(String, nullable=False)
     email = Column(String, unique=True, nullable=False, index=True)
-    affiliation = Column(String, nullable=True)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
     role_id = Column(Integer, ForeignKey("roles.id"), nullable=False)
     password_hash = Column(String, nullable=False)

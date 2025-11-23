@@ -4,6 +4,13 @@
       <v-app-bar-nav-icon @click="drawer = !drawer" class="d-md-none" />
       <v-toolbar-title>Beamtime Management</v-toolbar-title>
       <v-spacer />
+      <v-chip v-if="currentUser" prepend-icon="mdi-account" color="white" variant="outlined" class="mr-2">
+        {{ displayName }}
+        <template v-if="userRole">
+          <v-divider vertical class="mx-2" />
+          <span class="text-caption">{{ userRole.display_name }}</span>
+        </template>
+      </v-chip>
       <v-btn icon="mdi-refresh" :loading="refreshing" @click="refresh" />
       <v-btn icon="mdi-logout" @click="handleLogout" title="Logout" />
     </v-app-bar>
@@ -11,7 +18,7 @@
     <v-navigation-drawer v-if="showNavigation" v-model="drawer" app :permanent="$vuetify.display.mdAndUp">
       <v-list density="compact">
         <v-list-item
-          v-for="link in links"
+          v-for="link in filteredLinks"
           :key="link.to"
           :to="link.to"
           router
@@ -41,17 +48,67 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import { logout } from './services/api';
+import { logout, getCurrentUser, getRoles } from './services/api';
 
 const drawer = ref(true);
 const snackbar = ref(false);
 const refreshing = ref(false);
+const currentUser = ref(null);
+const roles = ref([]);
 const router = useRouter();
 const route = useRoute();
 
 const showNavigation = computed(() => route.name !== 'login' && route.name !== 'setup');
+
+const userRole = computed(() => {
+  if (!currentUser.value || !currentUser.value.role_id) return null;
+  return roles.value.find(r => r.id === currentUser.value.role_id);
+});
+
+const displayName = computed(() => {
+  if (!currentUser.value) return '';
+  const { last_name, middle_name, first_name } = currentUser.value;
+  if (last_name && first_name) {
+    return middle_name 
+      ? `${last_name}, ${middle_name} ${first_name}`
+      : `${last_name}, ${first_name}`;
+  }
+  return currentUser.value.name || currentUser.value.email;
+});
+
+const userAccessLevel = computed(() => {
+  if (!currentUser.value || !currentUser.value.role_id) return 0;
+  const role = roles.value.find(r => r.id === currentUser.value.role_id);
+  return role ? role.access_level : 0;
+});
+
+const allLinks = [
+  { title: 'Schedules', to: '/', icon: 'mdi-calendar-clock', minLevel: 0 },
+  { title: 'Management', to: '/management', icon: 'mdi-clipboard-list-outline', minLevel: 0 },
+  { title: 'Users', to: '/users', icon: 'mdi-account-group', minLevel: 3 },
+  { title: 'Institutions', to: '/institutions', icon: 'mdi-domain', minLevel: 0 },
+  { title: 'Approver Setup', to: '/approver-setup', icon: 'mdi-shield-account', minLevel: 0 },
+  { title: 'Settings', to: '/settings', icon: 'mdi-cog', minLevel: 0 }
+];
+
+const filteredLinks = computed(() => {
+  return allLinks.filter(link => userAccessLevel.value >= link.minLevel);
+});
+
+const loadUserData = async () => {
+  try {
+    const [userResponse, rolesResponse] = await Promise.all([
+      getCurrentUser(),
+      getRoles()
+    ]);
+    currentUser.value = userResponse.data;
+    roles.value = rolesResponse.data;
+  } catch (error) {
+    console.error('Failed to load user data:', error);
+  }
+};
 
 const onNavItemClick = () => {
   // モバイル画面でのみドロワーを閉じる
@@ -59,14 +116,6 @@ const onNavItemClick = () => {
     drawer.value = false;
   }
 };
-
-const links = [
-  { title: 'Schedules', to: '/', icon: 'mdi-calendar-clock' },
-  { title: 'Management', to: '/management', icon: 'mdi-clipboard-list-outline' },
-  { title: 'Users', to: '/users', icon: 'mdi-account-group' },
-  { title: 'Institutions', to: '/institutions', icon: 'mdi-domain' },
-  { title: 'Approver Setup', to: '/approver-setup', icon: 'mdi-shield-account' }
-];
 
 const refresh = async () => {
   refreshing.value = true;
@@ -77,6 +126,19 @@ const refresh = async () => {
 
 const handleLogout = async () => {
   await logout();
+  currentUser.value = null;
   router.push('/login');
 };
+
+onMounted(() => {
+  if (showNavigation.value) {
+    loadUserData();
+  }
+});
+
+watch(showNavigation, (newValue) => {
+  if (newValue) {
+    loadUserData();
+  }
+});
 </script>

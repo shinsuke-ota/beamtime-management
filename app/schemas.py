@@ -79,10 +79,6 @@ class UserBase(BaseModel):
     email: EmailStr = Field(
         ..., json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
-    affiliation: Optional[str] = Field(
-        None,
-        json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER},
-    )
     department_id: Optional[int] = Field(
         None,
         json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER},
@@ -116,9 +112,6 @@ class UserUpdate(BaseModel):
         None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
     email: Optional[EmailStr] = Field(
-        None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
-    )
-    affiliation: Optional[str] = Field(
         None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
     department_id: Optional[int] = Field(
@@ -155,9 +148,6 @@ class User(BaseModel):
     email: Optional[EmailStr] = Field(
         None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
-    affiliation: Optional[str] = Field(
-        None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
-    )
     department_id: Optional[int] = Field(
         None,
         json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER},
@@ -178,7 +168,6 @@ class PublicUser(BaseModel):
     last_name: str
     name: str
     email: Optional[EmailStr] = None
-    affiliation: Optional[str] = None
     department_id: Optional[int] = None
     role: Optional[UserRole] = None
     role_id: Optional[int] = None
@@ -199,7 +188,6 @@ class ApproverSetupRequest(BaseModel):
     last_name: str
     name: Optional[str] = None
     email: EmailStr
-    affiliation: Optional[str] = None
 
 
 class ApplicationManagerSetupRequest(BaseModel):
@@ -209,7 +197,6 @@ class ApplicationManagerSetupRequest(BaseModel):
     last_name: str
     name: Optional[str] = None
     email: EmailStr
-    affiliation: Optional[str] = None
     password: str
 
 

@@ -1,12 +1,18 @@
 <template>
-  <v-card rounded="xl" class="pa-4" color="white">
+  <div v-if="!canViewUsers">
+    <v-alert type="warning" prominent border="start" class="ma-4">
+      <v-alert-title>Access Denied</v-alert-title>
+      You do not have permission to view the user directory. Level 3 access or higher is required.
+    </v-alert>
+  </div>
+  <v-card v-else rounded="xl" class="pa-4" color="white">
     <div class="d-flex flex-wrap align-center justify-space-between ga-4 mb-4">
       <div>
         <h2 class="text-h6 mb-1">User Directory</h2>
         <p class="text-body-2 text-medium-emphasis mb-0">Browse and manage users across the facility.</p>
       </div>
       <div class="d-flex ga-2 align-center">
-        <v-btn color="primary" prepend-icon="mdi-account-plus" @click="openCreateDialog">New User</v-btn>
+        <v-btn v-if="canCreateUsers" color="primary" prepend-icon="mdi-account-plus" @click="openCreateDialog">New User</v-btn>
         <v-btn icon="mdi-refresh" :loading="loading" variant="tonal" @click="refreshDirectory" />
       </div>
     </div>
@@ -123,7 +129,7 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue';
-import { get, post, getInstitutions, getDepartments, getRoles } from '../services/api';
+import { get, post, getInstitutions, getDepartments, getRoles, getCurrentUser } from '../services/api';
 import UserForm from '../components/UserForm.vue';
 
 const emit = defineEmits(['refresh']);
@@ -132,6 +138,7 @@ const users = ref([]);
 const institutions = ref([]);
 const departments = ref([]);
 const roles = ref([]);
+const currentUser = ref(null);
 const loading = ref(false);
 const error = ref('');
 const search = ref('');
@@ -162,6 +169,18 @@ const roleOptions = computed(() => {
 const filteredDepartmentsForFilter = computed(() => {
   if (!institutionFilter.value) return [];
   return departments.value.filter(d => d.institution_id === institutionFilter.value);
+});
+
+const canViewUsers = computed(() => {
+  if (!currentUser.value || !currentUser.value.role_id) return false;
+  const userRole = roles.value.find(r => r.id === currentUser.value.role_id);
+  return userRole && userRole.access_level >= 3;
+});
+
+const canCreateUsers = computed(() => {
+  if (!currentUser.value || !currentUser.value.role_id) return false;
+  const userRole = roles.value.find(r => r.id === currentUser.value.role_id);
+  return userRole && userRole.access_level >= 4;
 });
 
 const roleChoices = ['PI', 'PROJECT_MANAGER', 'ALLOCATOR', 'APPROVER'];
@@ -265,7 +284,19 @@ watch(showEditDialog, value => {
 });
 
 onMounted(async () => {
+  try {
+    const [userResponse, rolesResponse] = await Promise.all([
+      getCurrentUser(),
+      getRoles()
+    ]);
+    currentUser.value = userResponse.data;
+    roles.value = rolesResponse.data;
+  } catch (error) {
+    console.error('Failed to load user/roles:', error);
+  }
   await loadInstitutionsAndDepartments();
-  await loadUsers();
+  if (canViewUsers.value) {
+    await loadUsers();
+  }
 });
 </script>

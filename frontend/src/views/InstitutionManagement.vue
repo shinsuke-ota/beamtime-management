@@ -12,7 +12,7 @@
           <v-card-title>
             <span class="text-h6">機関一覧</span>
             <v-spacer></v-spacer>
-            <v-btn color="primary" @click="openInstitutionDialog()">
+            <v-btn v-if="canManageInstitutions" color="primary" @click="openInstitutionDialog()">
               <v-icon left>mdi-plus</v-icon>
               機関追加
             </v-btn>
@@ -28,12 +28,14 @@
                 <v-list-item-title>{{ institution.name }}</v-list-item-title>
                 <template v-slot:append>
                   <v-btn
+                    v-if="canManageInstitutions"
                     icon="mdi-pencil"
                     size="small"
                     variant="text"
                     @click.stop="openInstitutionDialog(institution)"
                   ></v-btn>
                   <v-btn
+                    v-if="canManageInstitutions"
                     icon="mdi-delete"
                     size="small"
                     variant="text"
@@ -53,6 +55,7 @@
             <span class="text-h6">所属一覧</span>
             <v-spacer></v-spacer>
             <v-btn
+              v-if="canManageInstitutions"
               color="primary"
               @click="openDepartmentDialog()"
               :disabled="!selectedInstitution"
@@ -73,12 +76,14 @@
                 <v-list-item-title>{{ department.name }}</v-list-item-title>
                 <template v-slot:append>
                   <v-btn
+                    v-if="canManageInstitutions"
                     icon="mdi-pencil"
                     size="small"
                     variant="text"
                     @click="openDepartmentDialog(department)"
                   ></v-btn>
                   <v-btn
+                    v-if="canManageInstitutions"
                     icon="mdi-delete"
                     size="small"
                     variant="text"
@@ -184,12 +189,16 @@ import {
   getDepartments,
   createDepartment,
   updateDepartment,
-  deleteDepartment as deleteDepartmentApi
+  deleteDepartment as deleteDepartmentApi,
+  getCurrentUser,
+  getRoles
 } from '../services/api'
 
 const institutions = ref([])
 const departments = ref([])
 const selectedInstitution = ref(null)
+const currentUser = ref(null)
+const roles = ref([])
 
 const institutionDialog = ref(false)
 const departmentDialog = ref(false)
@@ -214,6 +223,12 @@ const filteredDepartments = computed(() => {
   return departments.value.filter(
     d => d.institution_id === selectedInstitution.value.id
   )
+})
+
+const canManageInstitutions = computed(() => {
+  if (!currentUser.value || !currentUser.value.role_id) return false
+  const userRole = roles.value.find(r => r.id === currentUser.value.role_id)
+  return userRole && userRole.access_level >= 4
 })
 
 const loadInstitutions = async () => {
@@ -347,7 +362,17 @@ const showSnackbar = (text, color = 'success') => {
   snackbar.value = true
 }
 
-onMounted(() => {
+onMounted(async () => {
+  try {
+    const [userResponse, rolesResponse] = await Promise.all([
+      getCurrentUser(),
+      getRoles()
+    ])
+    currentUser.value = userResponse.data
+    roles.value = rolesResponse.data
+  } catch (error) {
+    console.error('Failed to load user/roles:', error)
+  }
   loadInstitutions()
   loadDepartments()
 })

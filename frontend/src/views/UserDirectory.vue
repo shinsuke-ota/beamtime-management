@@ -19,9 +19,10 @@
           label="Search by name or email"
           prepend-inner-icon="mdi-magnify"
           clearable
+          hide-details
         />
       </v-col>
-      <v-col cols="12" md="4">
+      <v-col cols="12" md="3">
         <v-select
           v-model="roleFilter"
           :items="roleOptions"
@@ -31,14 +32,29 @@
           hide-details
         />
       </v-col>
-      <v-col cols="12" md="4">
+      <v-col cols="12" md="3">
         <v-select
-          v-model="affiliationFilter"
-          :items="affiliationOptions"
-          label="Filter by affiliation"
+          v-model="institutionFilter"
+          :items="institutions"
+          item-title="name"
+          item-value="id"
+          label="Filter by 機関"
           density="comfortable"
           clearable
           hide-details
+        />
+      </v-col>
+      <v-col cols="12" md="2">
+        <v-select
+          v-model="departmentFilter"
+          :items="filteredDepartmentsForFilter"
+          item-title="name"
+          item-value="id"
+          label="Filter by 所属"
+          density="comfortable"
+          clearable
+          hide-details
+          :disabled="!institutionFilter"
         />
       </v-col>
     </v-row>
@@ -60,13 +76,16 @@
       hover
       item-key="id"
     >
-      <template #item.role="{ item }">
+      <template v-slot:[`item.role`]="{ item }">
         <v-chip size="small" color="primary" variant="tonal">{{ item.role }}</v-chip>
       </template>
-      <template #item.affiliation="{ item }">
-        <v-chip size="small" color="teal-lighten-3" variant="tonal">{{ item.affiliation }}</v-chip>
+      <template v-slot:[`item.institution_name`]="{ item }">
+        <span class="text-body-2">{{ item.institution_name || '-' }}</span>
       </template>
-      <template #item.actions="{ item }">
+      <template v-slot:[`item.department_name`]="{ item }">
+        <span class="text-body-2">{{ item.department_name || '-' }}</span>
+      </template>
+      <template v-slot:[`item.actions`]="{ item }">
         <v-btn
           icon="mdi-pencil"
           variant="text"
@@ -82,61 +101,15 @@
       </template>
     </v-data-table>
 
-    <v-dialog v-model="showCreateDialog" max-width="520">
-      <v-card title="Create User">
-        <v-card-text>
-          <v-form ref="createForm" v-model="createFormValid" validate-on="submit lazy" @submit.prevent="submitNewUser">
-            <v-alert
-              v-if="creationError"
-              type="error"
-              border="start"
-              class="mb-4"
-              density="compact"
-              :text="creationError"
-            />
-            <v-text-field
-              v-model="newUser.name"
-              label="Name"
-              density="comfortable"
-              :rules="[requiredRule]"
-            />
-            <v-text-field
-              v-model="newUser.email"
-              label="Email"
-              density="comfortable"
-              type="email"
-              :rules="[requiredRule]"
-            />
-            <v-text-field
-              v-model="newUser.affiliation"
-              label="Affiliation"
-              density="comfortable"
-            />
-            <v-select
-              v-model="newUser.role"
-              :items="roleChoices"
-              label="Role"
-              density="comfortable"
-              :rules="[requiredRule]"
-            />
-          </v-form>
-        </v-card-text>
-        <v-card-actions class="justify-end">
-          <v-btn variant="text" @click="closeCreateDialog">Cancel</v-btn>
-          <v-btn
-            color="primary"
-            prepend-icon="mdi-content-save"
-            :loading="createLoading"
-            :disabled="createLoading"
-            @click="submitNewUser"
-          >
-            Save
-          </v-btn>
-        </v-card-actions>
-      </v-card>
+    <v-dialog v-model="showCreateDialog" max-width="720">
+      <UserForm
+        :key="'create'"
+        @cancel="closeCreateDialog"
+        @created="handleUserCreated"
+      />
     </v-dialog>
 
-    <v-dialog v-model="showEditDialog" max-width="520">
+    <v-dialog v-model="showEditDialog" max-width="720">
       <UserForm
         v-if="selectedUserId"
         :key="selectedUserId"
@@ -150,37 +123,34 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue';
-import { get, post } from '../services/api';
+import { get, post, getInstitutions, getDepartments, getRoles } from '../services/api';
 import UserForm from '../components/UserForm.vue';
 
 const emit = defineEmits(['refresh']);
 
 const users = ref([]);
+const institutions = ref([]);
+const departments = ref([]);
+const roles = ref([]);
 const loading = ref(false);
 const error = ref('');
 const search = ref('');
 const roleFilter = ref(null);
-const affiliationFilter = ref(null);
+const institutionFilter = ref(null);
+const departmentFilter = ref(null);
 const showCreateDialog = ref(false);
 const showEditDialog = ref(false);
-const createLoading = ref(false);
-const createFormValid = ref(false);
-const creationError = ref('');
-const createForm = ref(null);
 const selectedUserId = ref(null);
-const newUser = ref({
-  name: '',
-  email: '',
-  affiliation: '',
-  role: ''
-});
 
 const headers = [
-  { title: 'Name', value: 'name' },
+  { title: 'Account Name', value: 'account_name' },
+  { title: 'First Name', value: 'first_name' },
+  { title: 'Middle Name', value: 'middle_name' },
+  { title: 'Last Name', value: 'last_name' },
   { title: 'Email', value: 'email' },
   { title: 'Role', value: 'role' },
-  { title: 'Affiliation', value: 'affiliation' },
-  { title: 'Status', value: 'status' },
+  { title: '機関', value: 'institution_name' },
+  { title: '所属部門', value: 'department_name' },
   { title: 'Actions', value: 'actions', sortable: false, align: 'end' }
 ];
 
@@ -189,23 +159,52 @@ const roleOptions = computed(() => {
   return Array.from(new Set(roles)).sort();
 });
 
-const affiliationOptions = computed(() => {
-  const affiliations = users.value.map(user => user.affiliation).filter(Boolean);
-  return Array.from(new Set(affiliations)).sort();
+const filteredDepartmentsForFilter = computed(() => {
+  if (!institutionFilter.value) return [];
+  return departments.value.filter(d => d.institution_id === institutionFilter.value);
 });
 
 const roleChoices = ['PI', 'PROJECT_MANAGER', 'ALLOCATOR', 'APPROVER'];
 
 const filteredUsers = computed(() =>
-  users.value.filter(user => {
-    const matchesSearch = [user.name, user.email]
-      .filter(Boolean)
-      .some(field => field.toLowerCase().includes(search.value.trim().toLowerCase()));
-    const matchesRole = !roleFilter.value || user.role === roleFilter.value;
-    const matchesAffiliation = !affiliationFilter.value || user.affiliation === affiliationFilter.value;
-    return matchesSearch && matchesRole && matchesAffiliation;
-  })
+  users.value
+    .filter(user => {
+      const matchesSearch = [user.name, user.email]
+        .filter(Boolean)
+        .some(field => field.toLowerCase().includes(search.value.trim().toLowerCase()));
+      const matchesRole = !roleFilter.value || user.role === roleFilter.value;
+      const matchesInstitution = !institutionFilter.value || (() => {
+        const dept = departments.value.find(d => d.id === user.department_id);
+        return dept && dept.institution_id === institutionFilter.value;
+      })();
+      const matchesDepartment = !departmentFilter.value || user.department_id === departmentFilter.value;
+      return matchesSearch && matchesRole && matchesInstitution && matchesDepartment;
+    })
+    .map(user => {
+      const dept = departments.value.find(d => d.id === user.department_id);
+      const inst = dept ? institutions.value.find(i => i.id === dept.institution_id) : null;
+      return {
+        ...user,
+        department_name: dept?.name || null,
+        institution_name: inst?.name || null
+      };
+    })
 );
+
+const loadInstitutionsAndDepartments = async () => {
+  try {
+    const [institutionsRes, departmentsRes, rolesRes] = await Promise.all([
+      getInstitutions(),
+      getDepartments(),
+      getRoles()
+    ]);
+    institutions.value = institutionsRes.data;
+    departments.value = departmentsRes.data;
+    roles.value = rolesRes.data;
+  } catch (err) {
+    console.error('Failed to load institutions/departments/roles:', err);
+  }
+};
 
 const loadUsers = async () => {
   loading.value = true;
@@ -227,14 +226,7 @@ const refreshDirectory = async () => {
   emit('refresh');
 };
 
-const resetCreateForm = () => {
-  newUser.value = { name: '', email: '', affiliation: '', role: '' };
-  creationError.value = '';
-  createForm.value?.resetValidation?.();
-};
-
 const openCreateDialog = () => {
-  resetCreateForm();
   showCreateDialog.value = true;
 };
 
@@ -252,24 +244,9 @@ const closeEditDialog = () => {
   selectedUserId.value = null;
 };
 
-const requiredRule = value => !!value || 'This field is required';
-
-const submitNewUser = async () => {
-  const { valid } = (await createForm.value?.validate?.()) ?? { valid: true };
-  if (!valid) return;
-
-  createLoading.value = true;
-  creationError.value = '';
-  try {
-    await post('/users/', newUser.value);
-    closeCreateDialog();
-    await refreshDirectory();
-  } catch (err) {
-    console.error(err);
-    creationError.value = 'Unable to create user right now. Please try again later.';
-  } finally {
-    createLoading.value = false;
-  }
+const handleUserCreated = async () => {
+  await refreshDirectory();
+  closeCreateDialog();
 };
 
 const handleUserUpdated = async () => {
@@ -277,11 +254,18 @@ const handleUserUpdated = async () => {
   closeEditDialog();
 };
 
+watch(institutionFilter, () => {
+  departmentFilter.value = null;
+});
+
 watch(showEditDialog, value => {
   if (!value) {
     selectedUserId.value = null;
   }
 });
 
-onMounted(loadUsers);
+onMounted(async () => {
+  await loadInstitutionsAndDepartments();
+  await loadUsers();
+});
 </script>

@@ -32,21 +32,23 @@ class FieldAccess:
 
 
 # User fields default to level 3 (Project Manager) for read/write except password.
+# APPLICATION_MANAGER can read all fields except password_hash
 USER_FIELD_ACCESS: dict[str, FieldAccess] = {
-    "id": FieldAccess(read=AccessLevel.PROJECT_MANAGER, write=AccessLevel.PROJECT_MANAGER),
-    "account_name": FieldAccess(read=AccessLevel.PROJECT_MANAGER, write=AccessLevel.PROJECT_MANAGER),
-    "first_name": FieldAccess(read=AccessLevel.PROJECT_MANAGER, write=AccessLevel.PROJECT_MANAGER),
-    "middle_name": FieldAccess(read=AccessLevel.PROJECT_MANAGER, write=AccessLevel.PROJECT_MANAGER),
-    "last_name": FieldAccess(read=AccessLevel.PROJECT_MANAGER, write=AccessLevel.PROJECT_MANAGER),
-    "name": FieldAccess(read=AccessLevel.PROJECT_MANAGER, write=AccessLevel.PROJECT_MANAGER),
-    "email": FieldAccess(read=AccessLevel.PROJECT_MANAGER, write=AccessLevel.PROJECT_MANAGER),
+    "id": FieldAccess(read=AccessLevel.SELF, write=AccessLevel.PROJECT_MANAGER),
+    "account_name": FieldAccess(read=AccessLevel.SELF, write=AccessLevel.PROJECT_MANAGER),
+    "first_name": FieldAccess(read=AccessLevel.SELF, write=AccessLevel.PROJECT_MANAGER),
+    "middle_name": FieldAccess(read=AccessLevel.SELF, write=AccessLevel.PROJECT_MANAGER),
+    "last_name": FieldAccess(read=AccessLevel.SELF, write=AccessLevel.PROJECT_MANAGER),
+    "name": FieldAccess(read=AccessLevel.SELF, write=AccessLevel.PROJECT_MANAGER),
+    "email": FieldAccess(read=AccessLevel.SELF, write=AccessLevel.PROJECT_MANAGER),
     "affiliation": FieldAccess(
-        read=AccessLevel.PROJECT_MANAGER, write=AccessLevel.PROJECT_MANAGER
+        read=AccessLevel.SELF, write=AccessLevel.PROJECT_MANAGER
     ),
     "department_id": FieldAccess(
-        read=AccessLevel.PROJECT_MANAGER, write=AccessLevel.PROJECT_MANAGER
+        read=AccessLevel.SELF, write=AccessLevel.PROJECT_MANAGER
     ),
-    "role": FieldAccess(read=AccessLevel.PROJECT_MANAGER, write=AccessLevel.PROJECT_MANAGER),
+    "role": FieldAccess(read=AccessLevel.SELF, write=AccessLevel.PROJECT_MANAGER),
+    "role_id": FieldAccess(read=AccessLevel.SELF, write=AccessLevel.PROJECT_MANAGER),
     "password_hash": FieldAccess(read=AccessLevel.SELF, write=AccessLevel.SELF),
 }
 
@@ -108,11 +110,16 @@ def redact_user_payload(target: User, actor: User) -> dict:
     level = get_user_level(actor, target)
     payload = {
         "id": target.id,
+        "account_name": target.account_name,
+        "first_name": target.first_name,
+        "middle_name": target.middle_name,
+        "last_name": target.last_name,
         "name": target.name,
         "email": target.email,
         "affiliation": target.affiliation,
         "department_id": target.department_id,
         "role": target.role.slug if target.role else None,
+        "role_id": target.role_id if target.role else None,
     }
     # For fields included in the payload, still honor access levels.
     for field, requirement in USER_FIELD_ACCESS.items():

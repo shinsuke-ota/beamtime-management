@@ -65,3 +65,6 @@ export const getDepartments = (institutionId = null) => {
 export const createDepartment = (data) => post('/departments/', data);
 export const updateDepartment = (id, data) => put(`/departments/${id}`, data);
 export const deleteDepartment = (id) => del(`/departments/${id}`);
+
+// Role API
+export const getRoles = () => get('/roles/');

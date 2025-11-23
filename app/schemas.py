@@ -43,6 +43,19 @@ class Department(DepartmentBase):
         orm_mode = True
 
 
+class RoleBase(BaseModel):
+    slug: UserRole
+    display_name: str
+    access_level: int
+
+
+class Role(RoleBase):
+    id: int
+
+    class Config:
+        orm_mode = True
+
+
 class UserBase(BaseModel):
     account_name: str = Field(
         ...,
@@ -74,7 +87,7 @@ class UserBase(BaseModel):
         None,
         json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER},
     )
-    role: UserRole = Field(
+    role_id: int = Field(
         ..., json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
 
@@ -112,7 +125,7 @@ class UserUpdate(BaseModel):
         None,
         json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER},
     )
-    role: Optional[UserRole] = Field(
+    role_id: Optional[int] = Field(
         None, json_schema_extra={"read_level": AccessLevel.PROJECT_MANAGER, "write_level": AccessLevel.PROJECT_MANAGER}
     )
     password: Optional[str] = Field(
@@ -159,11 +172,16 @@ class User(BaseModel):
 
 class PublicUser(BaseModel):
     id: int
+    account_name: str
+    first_name: str
+    middle_name: Optional[str] = None
+    last_name: str
     name: str
     email: Optional[EmailStr] = None
     affiliation: Optional[str] = None
     department_id: Optional[int] = None
     role: Optional[UserRole] = None
+    role_id: Optional[int] = None
 
     class Config:
         orm_mode = True

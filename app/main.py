@@ -232,6 +232,11 @@ def get_department(department_id: int, db: Session = Depends(get_db)):
     return get_department_or_404(db, department_id)
 
 
+@app.get("/roles/", response_model=List[schemas.Role])
+def list_roles(db: Session = Depends(get_db)):
+    return db.query(models.Role).order_by(models.Role.access_level.asc()).all()
+
+
 @app.put("/departments/{department_id}", response_model=schemas.Department)
 def update_department(
     department_id: int,
@@ -479,11 +484,27 @@ def create_user(
         db.commit()
         db.refresh(db_user)
         return redact_user_payload(db_user, current_user)
-    except IntegrityError:
+    except IntegrityError as e:
         db.rollback()
+        error_msg = str(e.orig) if hasattr(e, 'orig') else str(e)
+        print(f"IntegrityError occurred: {error_msg}")
+        print(f"Full exception: {e}")
+        if 'email' in error_msg.lower():
+            detail = "A user with that email already exists"
+        elif 'account_name' in error_msg.lower():
+            detail = "A user with that account name already exists"
+        else:
+            detail = "A user with that information already exists"
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="A user with that email already exists",
+            detail=detail,
+        )
+    except Exception as e:
+        db.rollback()
+        print(f"Unexpected error during user creation: {type(e).__name__}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to create user: {str(e)}",
         )
 
 
@@ -530,6 +551,9 @@ def update_user(
             update_data.get("last_name", db_user.last_name),
             update_data.get("middle_name", db_user.middle_name),
         ))
+    # Validate role_id if provided
+    if "role_id" in update_data and update_data["role_id"] is not None:
+        get_role_by_id(db, update_data["role_id"])
     ensure_user_field_access(current_user, db_user, "write", update_data.keys())
     try:
         for field, value in update_data.items():

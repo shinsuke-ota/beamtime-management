@@ -7,6 +7,7 @@ import Login from '../views/Login.vue';
 import ApplicationManagerSetup from '../views/ApplicationManagerSetup.vue';
 import InstitutionManagement from '../views/InstitutionManagement.vue';
 import Settings from '../views/Settings.vue';
+import ApprovedProjects from '../views/ApprovedProjects.vue';
 import { getCurrentUser, getSetupStatus } from '../services/api';
 
 const routes = [
@@ -17,7 +18,8 @@ const routes = [
   { path: '/users', name: 'users', component: UserDirectory, meta: { requiresAuth: true } },
   { path: '/approver-setup', name: 'approver-setup', component: ApproverSetup, meta: { requiresAuth: true } },
   { path: '/institutions', name: 'institutions', component: InstitutionManagement, meta: { requiresAuth: true } },
-  { path: '/settings', name: 'settings', component: Settings, meta: { requiresAuth: true } }
+  { path: '/settings', name: 'settings', component: Settings, meta: { requiresAuth: true } },
+  { path: '/approved-projects', name: 'approved-projects', component: ApprovedProjects, meta: { requiresAuth: true } }
 ];
 
 const router = createRouter({

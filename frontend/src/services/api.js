@@ -67,3 +67,13 @@ export const deleteDepartment = (id) => del(`/departments/${id}`);
 
 // Role API
 export const getRoles = () => get('/roles/');
+
+// Experimental Course API
+export const getExperimentalCourses = () => get('/experimental-courses/');
+
+// Approved Project API
+export const getApprovedProjects = () => get('/approved-projects/');
+export const getApprovedProject = (id) => get(`/approved-projects/${id}`);
+export const createApprovedProject = (data) => post('/approved-projects/', data);
+export const updateApprovedProject = (id, data) => put(`/approved-projects/${id}`, data);
+export const deleteApprovedProject = (id) => del(`/approved-projects/${id}`);

@@ -416,7 +416,7 @@ def login(payload: schemas.LoginRequest, response: Response, db: Session = Depen
             headers={"WWW-Authenticate": "Bearer"},
         )
     access_token = create_access_token(
-        data={"sub": str(db_user.id), "role": db_user.role.slug.value},
+        data={"sub": str(db_user.id), "role": db_user.role.slug},
         expires_delta=timedelta(minutes=60),
     )
     session_ttl = timedelta(minutes=app.state.session_ttl_minutes)
@@ -427,7 +427,7 @@ def login(payload: schemas.LoginRequest, response: Response, db: Session = Depen
                 "id": db_user.id,
                 "name": db_user.name,
                 "email": db_user.email,
-                "role": db_user.role.slug.value,
+                "role": db_user.role.slug,
             }
         },
         expires_delta=session_ttl,
@@ -804,3 +804,194 @@ def monthly_report(
         )
         for month, data in sorted(report.items())
     ]
+
+
+# Experimental Courses endpoints
+@app.get("/experimental-courses/", response_model=List[schemas.ExperimentalCourse])
+def list_experimental_courses(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """List all experimental courses"""
+    courses = db.query(models.ExperimentalCourse).all()
+    return courses
+
+
+# Approved Projects endpoints
+@app.post("/approved-projects/", response_model=schemas.ApprovedProject, status_code=status.HTTP_201_CREATED)
+def create_approved_project(
+    payload: schemas.ApprovedProjectCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Create a new approved project (ALLOCATOR+ only)"""
+    ensure_level(current_user, AccessLevel.ALLOCATOR, "Only allocators or higher can create approved projects")
+    
+    # Check if project_number already exists
+    existing = db.query(models.ApprovedProject).filter(
+        models.ApprovedProject.project_number == payload.project_number
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Project number {payload.project_number} already exists"
+        )
+    
+    # Verify all PI users exist
+    for user_id in payload.principal_investigator_ids:
+        user = db.query(models.User).filter(models.User.id == user_id).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"User with id {user_id} not found"
+            )
+    
+    # Create the project
+    project = models.ApprovedProject(
+        project_number=payload.project_number,
+        title=payload.title,
+        summary=payload.summary
+    )
+    db.add(project)
+    db.flush()
+    
+    # Add principal investigators
+    for idx, user_id in enumerate(payload.principal_investigator_ids):
+        pi = models.ProjectPI(
+            project_id=project.id,
+            user_id=user_id,
+            is_primary=(idx == 0)  # First PI is primary
+        )
+        db.add(pi)
+    
+    # Add beam requests
+    for beam_req in payload.beam_requests:
+        beam = models.BeamRequest(
+            project_id=project.id,
+            **beam_req.dict()
+        )
+        db.add(beam)
+    
+    db.commit()
+    db.refresh(project)
+    return project
+
+
+@app.get("/approved-projects/", response_model=List[schemas.ApprovedProject])
+def list_approved_projects(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """List all approved projects (PI+ can view)"""
+    ensure_level(current_user, AccessLevel.PI, "Only PIs or higher can view approved projects")
+    projects = db.query(models.ApprovedProject).offset(skip).limit(limit).all()
+    return projects
+
+
+@app.get("/approved-projects/{project_id}", response_model=schemas.ApprovedProject)
+def get_approved_project(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Get a specific approved project"""
+    ensure_level(current_user, AccessLevel.PI, "Only PIs or higher can view approved projects")
+    project = db.query(models.ApprovedProject).filter(models.ApprovedProject.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    return project
+
+
+@app.put("/approved-projects/{project_id}", response_model=schemas.ApprovedProject)
+def update_approved_project(
+    project_id: int,
+    payload: schemas.ApprovedProjectUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Update an approved project (ALLOCATOR+ only)"""
+    ensure_level(current_user, AccessLevel.ALLOCATOR, "Only allocators or higher can update approved projects")
+    
+    project = db.query(models.ApprovedProject).filter(models.ApprovedProject.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    
+    # Update basic fields
+    if payload.project_number is not None:
+        # Check if new project_number already exists
+        existing = db.query(models.ApprovedProject).filter(
+            models.ApprovedProject.project_number == payload.project_number,
+            models.ApprovedProject.id != project_id
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Project number {payload.project_number} already exists"
+            )
+        project.project_number = payload.project_number
+    
+    if payload.title is not None:
+        project.title = payload.title
+    
+    if payload.summary is not None:
+        project.summary = payload.summary
+    
+    # Update principal investigators if provided
+    if payload.principal_investigator_ids is not None:
+        # Verify all PI users exist
+        for user_id in payload.principal_investigator_ids:
+            user = db.query(models.User).filter(models.User.id == user_id).first()
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"User with id {user_id} not found"
+                )
+        
+        # Remove existing PIs
+        db.query(models.ProjectPI).filter(models.ProjectPI.project_id == project_id).delete()
+        
+        # Add new PIs
+        for idx, user_id in enumerate(payload.principal_investigator_ids):
+            pi = models.ProjectPI(
+                project_id=project.id,
+                user_id=user_id,
+                is_primary=(idx == 0)
+            )
+            db.add(pi)
+    
+    # Update beam requests if provided
+    if payload.beam_requests is not None:
+        # Remove existing beam requests
+        db.query(models.BeamRequest).filter(models.BeamRequest.project_id == project_id).delete()
+        
+        # Add new beam requests
+        for beam_req in payload.beam_requests:
+            beam = models.BeamRequest(
+                project_id=project.id,
+                **beam_req.dict()
+            )
+            db.add(beam)
+    
+    db.commit()
+    db.refresh(project)
+    return project
+
+
+@app.delete("/approved-projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_approved_project(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Delete an approved project (ALLOCATOR+ only)"""
+    ensure_level(current_user, AccessLevel.ALLOCATOR, "Only allocators or higher can delete approved projects")
+    
+    project = db.query(models.ApprovedProject).filter(models.ApprovedProject.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    
+    db.delete(project)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

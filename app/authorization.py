@@ -114,7 +114,7 @@ def redact_user_payload(target: User, actor: User) -> dict:
         "name": target.name,
         "email": target.email,
         "department_id": target.department_id,
-        "role": target.role.slug if target.role else None,
+        "role": target.role,
         "role_id": target.role_id if target.role else None,
     }
     # For fields included in the payload, still honor access levels.

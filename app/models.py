@@ -211,3 +211,77 @@ class Approval(Base):
 
     allocation = relationship("Allocation", back_populates="approvals")
     approver = relationship("User", back_populates="approvals")
+
+
+class ExperimentalCourse(Base):
+    __tablename__ = "experimental_courses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, nullable=False)
+
+    beam_requests = relationship("BeamRequest", back_populates="course")
+
+
+class ApprovedProject(Base):
+    __tablename__ = "approved_projects"
+
+    access_metadata = {
+        "id": {"read_level": 2, "write_level": 4},
+        "project_number": {"read_level": 2, "write_level": 4},
+        "title": {"read_level": 2, "write_level": 4},
+        "summary": {"read_level": 2, "write_level": 4},
+        "created_at": {"read_level": 2, "write_level": 4},
+        "updated_at": {"read_level": 2, "write_level": 4},
+    }
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_number = Column(String, unique=True, nullable=False, index=True)
+    title = Column(String, nullable=False)
+    summary = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    principal_investigators = relationship("ProjectPI", back_populates="project", cascade="all, delete-orphan")
+    beam_requests = relationship("BeamRequest", back_populates="project", cascade="all, delete-orphan")
+
+
+class ProjectPI(Base):
+    __tablename__ = "project_pis"
+    __table_args__ = (
+        UniqueConstraint("project_id", "user_id", name="uq_project_pi"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("approved_projects.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    is_primary = Column(Boolean, default=False, nullable=False)
+
+    project = relationship("ApprovedProject", back_populates="principal_investigators")
+    user = relationship("User")
+
+
+class BeamRequest(Base):
+    __tablename__ = "beam_requests"
+
+    access_metadata = {
+        "id": {"read_level": 2, "write_level": 4},
+        "project_id": {"read_level": 2, "write_level": 4},
+        "beam_species": {"read_level": 2, "write_level": 4},
+        "max_intensity": {"read_level": 2, "write_level": 4},
+        "required_resolution": {"read_level": 2, "write_level": 4},
+        "course_id": {"read_level": 2, "write_level": 4},
+        "planned_irradiation_hours": {"read_level": 2, "write_level": 4},
+        "completed_irradiation_hours": {"read_level": 2, "write_level": 4},
+    }
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("approved_projects.id"), nullable=False)
+    beam_species = Column(String, nullable=False)
+    max_intensity = Column(String, nullable=True)
+    required_resolution = Column(String, nullable=True)
+    course_id = Column(Integer, ForeignKey("experimental_courses.id"), nullable=False)
+    planned_irradiation_hours = Column(Integer, nullable=False, default=0)
+    completed_irradiation_hours = Column(Integer, nullable=False, default=0)
+
+    project = relationship("ApprovedProject", back_populates="beam_requests")
+    course = relationship("ExperimentalCourse", back_populates="beam_requests")

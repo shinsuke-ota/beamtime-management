@@ -87,6 +87,7 @@ const userAccessLevel = computed(() => {
 const allLinks = [
   { title: 'Schedules', to: '/', icon: 'mdi-calendar-clock', minLevel: 0 },
   { title: 'Management', to: '/management', icon: 'mdi-clipboard-list-outline', minLevel: 0 },
+  { title: 'Approved Projects', to: '/approved-projects', icon: 'mdi-folder-star', minLevel: 2 },
   { title: 'Users', to: '/users', icon: 'mdi-account-group', minLevel: 3 },
   { title: 'Institutions', to: '/institutions', icon: 'mdi-domain', minLevel: 0 },
   { title: 'Approver Setup', to: '/approver-setup', icon: 'mdi-shield-account', minLevel: 0 },

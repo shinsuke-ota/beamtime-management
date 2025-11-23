@@ -169,7 +169,7 @@ class PublicUser(BaseModel):
     name: str
     email: Optional[EmailStr] = None
     department_id: Optional[int] = None
-    role: Optional[UserRole] = None
+    role: Optional[Role] = None
     role_id: Optional[int] = None
 
     class Config:
@@ -341,3 +341,100 @@ class AllocationTableRow(BaseModel):
     slot_time: str
     duration_hours: int
     status: AllocationStatus
+
+
+# Experimental Course Schemas
+class ExperimentalCourseBase(BaseModel):
+    name: str
+
+
+class ExperimentalCourseCreate(ExperimentalCourseBase):
+    pass
+
+
+class ExperimentalCourse(ExperimentalCourseBase):
+    id: int
+
+    class Config:
+        orm_mode = True
+
+
+# Beam Request Schemas
+class BeamRequestBase(BaseModel):
+    beam_species: str
+    max_intensity: Optional[str] = None
+    required_resolution: Optional[str] = None
+    course_id: int
+    planned_irradiation_hours: int = 0
+    completed_irradiation_hours: int = 0
+
+
+class BeamRequestCreate(BeamRequestBase):
+    pass
+
+
+class BeamRequestUpdate(BaseModel):
+    beam_species: Optional[str] = None
+    max_intensity: Optional[str] = None
+    required_resolution: Optional[str] = None
+    course_id: Optional[int] = None
+    planned_irradiation_hours: Optional[int] = None
+    completed_irradiation_hours: Optional[int] = None
+
+
+class BeamRequest(BeamRequestBase):
+    id: int
+    project_id: int
+    course: Optional[ExperimentalCourse] = None
+
+    class Config:
+        orm_mode = True
+
+
+# Project PI Schemas
+class ProjectPIBase(BaseModel):
+    user_id: int
+    is_primary: bool = False
+
+
+class ProjectPICreate(ProjectPIBase):
+    pass
+
+
+class ProjectPIWithUser(ProjectPIBase):
+    id: int
+    user: Optional["PublicUser"] = None
+
+    class Config:
+        orm_mode = True
+
+
+# Approved Project Schemas
+class ApprovedProjectBase(BaseModel):
+    project_number: str
+    title: str
+    summary: Optional[str] = None
+
+
+class ApprovedProjectCreate(ApprovedProjectBase):
+    principal_investigator_ids: List[int] = []
+    beam_requests: List[BeamRequestCreate] = []
+
+
+class ApprovedProjectUpdate(BaseModel):
+    project_number: Optional[str] = None
+    title: Optional[str] = None
+    summary: Optional[str] = None
+    principal_investigator_ids: Optional[List[int]] = None
+    beam_requests: Optional[List[BeamRequestCreate]] = None
+
+
+class ApprovedProject(ApprovedProjectBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    principal_investigators: List[ProjectPIWithUser] = []
+    beam_requests: List[BeamRequest] = []
+
+    class Config:
+        orm_mode = True
